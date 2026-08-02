@@ -90,6 +90,11 @@ The general driver has also been verified on the target hardware for stopping
 both outputs at LOW and switching back from paired RMT output to an existing
 single-channel RMT lesson.
 
+All six ScopeBuddy 0.5 two-channel lessons have been smoke-tested on the target
+CrowPanel with an oscilloscope. Trigger/response timing, phase shift, frequency
+division, ultrasonic echo timing, gated PWM, and quadrature phase order match
+their displayed results. Stopping a lesson leaves both outputs LOW.
+
 ## Project structure
 
 - `main/` — ScopeBuddy application and LVGL user interface
