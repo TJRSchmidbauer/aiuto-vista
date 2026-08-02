@@ -772,19 +772,22 @@ static void make_mode_card(int x, const scope_lesson_definition_t *lesson)
     lv_obj_set_width(title, 198);
     lv_obj_set_style_text_font(title, &scopebuddy_font_14, 0);
     make_label(card, lesson->category, 18, 58, &lv_font_montserrat_14, 0xDCE8F7);
-    char channel_badge[8];
-    snprintf(channel_badge, sizeof(channel_badge), "%u CH", lesson->required_channels);
-    make_label(card, channel_badge, 168, 58, &lv_font_montserrat_14,
-               lesson->required_channels == 2 ? 0x18B8C9 : 0x607895);
     lv_obj_t *description = make_label(card, lesson->summary, 18, 98,
                                        &lv_font_montserrat_14, 0x8FA5C2);
     lv_obj_set_width(description, 194);
     lv_obj_set_style_text_line_space(description, 6, 0);
     lv_obj_t *status = make_label(card,
-                                  locked ? "2 CH IN EINSTELLUNGEN AKTIVIEREN" : "3 STUFEN",
+                                  locked ? "IN EINSTELLUNGEN\nAKTIVIEREN" : "3 STUFEN",
                                   18, locked ? 176 : 190,
                                   &lv_font_montserrat_14, locked ? 0xE6B43C : 0x607895);
-    lv_obj_set_width(status, 194);
+    lv_obj_set_width(status, 140);
+    char channel_badge[8];
+    snprintf(channel_badge, sizeof(channel_badge), "%u CH", lesson->required_channels);
+    lv_obj_t *badge = make_label(card, channel_badge, 160, 190,
+                                 &lv_font_montserrat_14,
+                                 lesson->required_channels == 2 ? 0x18B8C9 : 0x607895);
+    lv_obj_set_width(badge, 52);
+    lv_obj_set_style_text_align(badge, LV_TEXT_ALIGN_RIGHT, 0);
     lv_obj_t *start_button = make_button(card, locked ? "2 CH NÖTIG" : "STARTEN",
                                          18, 222, 194, 42,
                                          locked ? 0x26384B : lesson->accent,
