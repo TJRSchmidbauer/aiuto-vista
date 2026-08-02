@@ -35,9 +35,17 @@ typedef struct {
     uint32_t duration_us;
 } gpio_wave_segment_t;
 
+/* Single-channel sequences use GPIO48. Pair sequences use GPIO48 as channel 1
+ * and GPIO47 as channel 2. Both pair timelines must have equal total duration. */
 esp_err_t gpio_sequence_start(const gpio_wave_segment_t *segments,
                               size_t segment_count, bool loop);
 esp_err_t gpio_sequence_stop(void);
+esp_err_t gpio_sequence_pair_start(const gpio_wave_segment_t *channel_1_segments,
+                                   size_t channel_1_segment_count,
+                                   const gpio_wave_segment_t *channel_2_segments,
+                                   size_t channel_2_segment_count,
+                                   bool loop);
+esp_err_t gpio_sequence_pair_stop(void);
 esp_err_t gpio_sync_test_start(void);
 esp_err_t gpio_sync_test_stop(void);
 esp_err_t gpio_burst_start(uint32_t frequency_hz, uint8_t duty_percent,

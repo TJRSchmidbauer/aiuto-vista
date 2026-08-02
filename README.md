@@ -69,6 +69,15 @@ an expansion UART/SPI device while running this test.
 The test has been verified on the target CrowPanel: both outputs measured
 1 kHz at 50% duty cycle, with GPIO47 following GPIO48 by 100 µs as specified.
 
+The diagnostic uses the same general pair-sequence API intended for lessons.
+It compiles arbitrary level/duration segments for both channels, rejects pairs
+with unequal total duration, starts both RMT channels synchronously, and drives
+both pins LOW when the output is stopped.
+
+The general driver has also been verified on the target hardware for stopping
+both outputs at LOW and switching back from paired RMT output to an existing
+single-channel RMT lesson.
+
 ## Project structure
 
 - `main/` — ScopeBuddy application and LVGL user interface
