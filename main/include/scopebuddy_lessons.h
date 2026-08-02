@@ -6,7 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define SCOPEBUDDY_LESSON_COUNT 9U
+#define SCOPEBUDDY_LESSON_COUNT 15U
 #define SCOPEBUDDY_MAX_CHANNELS 2U
 #define SCOPEBUDDY_MAX_MEASUREMENTS 3U
 #define SCOPEBUDDY_MAX_SEGMENTS 40U
@@ -21,6 +21,12 @@ typedef enum {
     SCOPE_LESSON_BUTTON_BOUNCE,
     SCOPE_LESSON_UART,
     SCOPE_LESSON_ALTERNATING,
+    SCOPE_LESSON_TRIGGER_RESPONSE,
+    SCOPE_LESSON_PHASE_SHIFT,
+    SCOPE_LESSON_FREQUENCY_DIVIDER,
+    SCOPE_LESSON_ULTRASONIC,
+    SCOPE_LESSON_GATED_PWM,
+    SCOPE_LESSON_QUADRATURE,
 } scope_lesson_id_t;
 
 typedef enum {
@@ -122,6 +128,12 @@ typedef union {
     struct { uint32_t edge_count; uint32_t duration_us; } button_bounce;
     struct { uint32_t baud; uint8_t data_byte; } uart;
     struct { uint32_t state_duration_ms; } alternating;
+    struct { uint32_t delay_us; uint32_t response_width_us; } trigger_response;
+    struct { uint32_t delay_us; double phase_degrees; } phase_shift;
+    struct { uint32_t ratio; } frequency_divider;
+    struct { uint32_t echo_delay_us; uint32_t distance_cm; } ultrasonic;
+    struct { uint32_t start_delay_us; uint32_t pulse_count; } gated_pwm;
+    struct { bool channel_a_leads; uint32_t quarter_period_us; } quadrature;
 } scope_lesson_parameters_t;
 
 typedef struct {

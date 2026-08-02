@@ -53,6 +53,42 @@ static const scope_lesson_definition_t lessons[SCOPEBUDDY_LESSON_COUNT] = {
       .learning_objective = "Zwei zeitlich wechselnde Signalzustände getrennt vermessen.",
       .connection_hint = CH1_CONNECTION, .trigger_hint = "Lange Zeitbasis wählen, danach beide Zustände vergrößern.",
       .accent = 0xC14F71, .required_channels = 1 },
+    { .id = SCOPE_LESSON_TRIGGER_RESPONSE, .title = "TRIGGER / ANTWORT", .category = "ZWEIKANAL",
+      .summary = "Reaktionszeit zweier Signale messen",
+      .learning_objective = "Pulsbreiten und die Verzögerung zwischen zwei Kanälen bestimmen.",
+      .connection_hint = "CH1 an GPIO48, CH2 an GPIO47, gemeinsame Masse an GND.",
+      .trigger_hint = "Auf die steigende Flanke von CH1 triggern.",
+      .accent = 0x18B8C9, .required_channels = 2 },
+    { .id = SCOPE_LESSON_PHASE_SHIFT, .title = "PHASENLAGE", .category = "ZWEIKANAL",
+      .summary = "Zeitversatz in Phasenwinkel umrechnen",
+      .learning_objective = "Aus Periodendauer und Zeitversatz die Phasenlage berechnen.",
+      .connection_hint = "CH1 an GPIO48, CH2 an GPIO47, gemeinsame Masse an GND.",
+      .trigger_hint = "Auf CH1 triggern und die steigenden Flanken beider Kanäle vergleichen.",
+      .accent = 0x18B8C9, .required_channels = 2 },
+    { .id = SCOPE_LESSON_FREQUENCY_DIVIDER, .title = "FREQUENZTEILER", .category = "ZWEIKANAL",
+      .summary = "Taktfrequenzen und Teilverhältnis vergleichen",
+      .learning_objective = "Zwei Frequenzen messen und daraus das ganzzahlige Teilverhältnis bestimmen.",
+      .connection_hint = "CH1 an GPIO48, CH2 an GPIO47, gemeinsame Masse an GND.",
+      .trigger_hint = "Auf CH2 triggern und mehrere CH1-Perioden anzeigen.",
+      .accent = 0x18B8C9, .required_channels = 2 },
+    { .id = SCOPE_LESSON_ULTRASONIC, .title = "ULTRASCHALL-ECHO", .category = "SENSORSIGNALE",
+      .summary = "Echozeit als Entfernung interpretieren",
+      .learning_objective = "Aus der Breite eines simulierten Echosignals eine Entfernung bestimmen.",
+      .connection_hint = "CH1 an GPIO48 (Trigger), CH2 an GPIO47 (Echo), Masse an GND.",
+      .trigger_hint = "Auf die steigende Triggerflanke von CH1 triggern.",
+      .accent = 0xE77C37, .required_channels = 2 },
+    { .id = SCOPE_LESSON_GATED_PWM, .title = "GATED PWM", .category = "ZWEIKANAL",
+      .summary = "Freigabefenster und Pulsfolge untersuchen",
+      .learning_objective = "Startverzögerung, Pulszahl und Dauer eines freigegebenen PWM-Pakets messen.",
+      .connection_hint = "CH1 an GPIO48 (Freigabe), CH2 an GPIO47 (PWM), Masse an GND.",
+      .trigger_hint = "Auf die steigende Freigabeflanke von CH1 triggern.",
+      .accent = 0xE6B43C, .required_channels = 2 },
+    { .id = SCOPE_LESSON_QUADRATURE, .title = "QUADRATURGEBER", .category = "ENCODERSIGNALE",
+      .summary = "Drehrichtung aus Spur A und B erkennen",
+      .learning_objective = "Aus der führenden Spur die simulierte Drehrichtung bestimmen.",
+      .connection_hint = "CH1 an GPIO48 (Spur A), CH2 an GPIO47 (Spur B), Masse an GND.",
+      .trigger_hint = "Auf eine steigende Flanke von Spur A triggern.",
+      .accent = 0x6BCB77, .required_channels = 2 },
 };
 
 static uint32_t random_range(uint32_t minimum, uint32_t maximum)
@@ -116,6 +152,19 @@ static esp_err_t append_timeline_segment(scope_timeline_spec_t *timeline, bool l
 static esp_err_t append_segment(scope_lesson_instance_t *instance, bool level, uint32_t duration_us)
 {
     return append_timeline_segment(&instance->signal.data.sequence.timeline, level, duration_us);
+}
+
+static esp_err_t append_pair_segment(scope_lesson_instance_t *instance, size_t channel,
+                                     bool level, uint32_t duration_us)
+{
+    if (channel >= SCOPEBUDDY_MAX_CHANNELS) return ESP_ERR_INVALID_ARG;
+    return append_timeline_segment(&instance->signal.data.pair.channels[channel], level, duration_us);
+}
+
+static void begin_pair(scope_lesson_instance_t *instance)
+{
+    instance->signal.kind = SCOPE_SIGNAL_SEQUENCE_PAIR;
+    instance->signal.data.pair.loop = true;
 }
 
 static void set_realized_pwm(scope_realized_channel_t *channel, uint32_t frequency, uint8_t duty)
@@ -387,6 +436,263 @@ static esp_err_t generate_alternating(scope_lesson_instance_t *instance)
     return ESP_OK;
 }
 
+static esp_err_t generate_trigger_response(scope_lesson_instance_t *instance)
+{
+    static const uint32_t easy_delays[] = { 1000, 2000, 5000 };
+    uint32_t trigger_width = instance->difficulty == 1 ? 500U :
+                             instance->difficulty == 2 ? random_range(2, 10) * 100U :
+                                                         random_range(100, 1500);
+    uint32_t response_width = instance->difficulty == 1 ? 1000U :
+                              instance->difficulty == 2 ? random_range(5, 20) * 100U :
+                                                          random_range(200, 2500);
+    uint32_t delay = instance->difficulty == 1 ? choose(easy_delays, 3) :
+                     instance->difficulty == 2 ? random_range(5, 50) * 100U :
+                                                 random_range(300, 10000);
+    uint32_t common_duration = delay + response_width + 10000U;
+
+    begin_pair(instance);
+    ESP_RETURN_ON_ERROR(append_pair_segment(instance, 0, true, trigger_width),
+                        "LESSONS", "Trigger pulse failed");
+    ESP_RETURN_ON_ERROR(append_pair_segment(instance, 0, false, common_duration - trigger_width),
+                        "LESSONS", "Trigger idle failed");
+    ESP_RETURN_ON_ERROR(append_pair_segment(instance, 1, false, delay),
+                        "LESSONS", "Response delay failed");
+    ESP_RETURN_ON_ERROR(append_pair_segment(instance, 1, true, response_width),
+                        "LESSONS", "Response pulse failed");
+    ESP_RETURN_ON_ERROR(append_pair_segment(instance, 1, false, common_duration - delay - response_width),
+                        "LESSONS", "Response idle failed");
+
+    instance->realized[0] = (scope_realized_channel_t){ 0, common_duration, trigger_width, 0 };
+    instance->realized[1] = (scope_realized_channel_t){ 0, common_duration, response_width, 0 };
+    instance->parameters.trigger_response.delay_us = delay;
+    instance->parameters.trigger_response.response_width_us = response_width;
+    snprintf(instance->context, sizeof(instance->context),
+             "CH1 löst ein Ereignis aus; CH2 antwortet nach einer definierten Reaktionszeit.");
+    set_numeric_measurement(instance, 0, "Trigger-Pulsbreite", SCOPE_MEASUREMENT_CHANNEL_1,
+                            trigger_width, trigger_width * 0.03, "µs", 0, "HIGH-Zeit auf CH1");
+    set_numeric_measurement(instance, 1, "Antwort-Pulsbreite", SCOPE_MEASUREMENT_CHANNEL_2,
+                            response_width, response_width * 0.03, "µs", 0, "HIGH-Zeit auf CH2");
+    set_numeric_measurement(instance, 2, "Reaktionszeit", SCOPE_MEASUREMENT_CHANNEL_PAIR,
+                            delay, delay * 0.03, "µs", 0, "Steigende Flanke CH1 bis steigende Flanke CH2");
+    return ESP_OK;
+}
+
+static esp_err_t generate_phase_shift(scope_lesson_instance_t *instance)
+{
+    static const uint32_t periods[] = { 1000, 2000, 4000 };
+    static const uint32_t easy_phases[] = { 90, 180, 270 };
+    static const uint32_t medium_phases[] = { 45, 90, 135, 180, 225, 270 };
+    uint32_t period = choose(periods, 3);
+    uint32_t requested_phase = instance->difficulty == 1 ? choose(easy_phases, 3) :
+                               instance->difficulty == 2 ? choose(medium_phases, 6) :
+                                                           random_range(2, 18) * 15U;
+    uint32_t delay = (period * requested_phase + 180U) / 360U;
+    uint32_t high_time = period / 5U;
+    double actual_phase = 360.0 * delay / period;
+
+    begin_pair(instance);
+    ESP_RETURN_ON_ERROR(append_pair_segment(instance, 0, true, high_time),
+                        "LESSONS", "Phase reference HIGH failed");
+    ESP_RETURN_ON_ERROR(append_pair_segment(instance, 0, false, period - high_time),
+                        "LESSONS", "Phase reference LOW failed");
+    ESP_RETURN_ON_ERROR(append_pair_segment(instance, 1, false, delay),
+                        "LESSONS", "Phase delay failed");
+    ESP_RETURN_ON_ERROR(append_pair_segment(instance, 1, true, high_time),
+                        "LESSONS", "Phase shifted HIGH failed");
+    ESP_RETURN_ON_ERROR(append_pair_segment(instance, 1, false, period - delay - high_time),
+                        "LESSONS", "Phase shifted LOW failed");
+
+    uint32_t frequency = (1000000U + period / 2U) / period;
+    instance->realized[0] = (scope_realized_channel_t){ frequency, period, high_time, 20 };
+    instance->realized[1] = instance->realized[0];
+    instance->parameters.phase_shift.delay_us = delay;
+    instance->parameters.phase_shift.phase_degrees = actual_phase;
+    snprintf(instance->context, sizeof(instance->context),
+             "CH2 ist gegenüber der steigenden Referenzflanke auf CH1 verzögert.");
+    set_numeric_measurement(instance, 0, "Periodendauer", SCOPE_MEASUREMENT_CHANNEL_1,
+                            period, period * 0.02, "µs", 0, "Abstand zweier CH1-Flanken");
+    set_numeric_measurement(instance, 1, "Zeitversatz", SCOPE_MEASUREMENT_CHANNEL_PAIR,
+                            delay, delay * 0.03, "µs", 0, "CH1-Anstieg bis CH2-Anstieg");
+    set_numeric_measurement(instance, 2, "Phasenverschiebung", SCOPE_MEASUREMENT_DERIVED,
+                            actual_phase, 2.0, "°", 1, "φ = 360° · Δt / T");
+    return ESP_OK;
+}
+
+static esp_err_t generate_frequency_divider(scope_lesson_instance_t *instance)
+{
+    static const uint32_t periods[] = { 500, 1000, 2000 };
+    static const uint32_t medium_ratios[] = { 2, 3, 4 };
+    uint32_t input_period = choose(periods, 3);
+    uint32_t ratio = instance->difficulty == 1 ? 2U :
+                     instance->difficulty == 2 ? choose(medium_ratios, 3) : random_range(3, 8);
+    uint32_t common_duration = input_period * ratio;
+    uint32_t input_high = input_period / 2U;
+
+    begin_pair(instance);
+    for (uint32_t cycle = 0; cycle < ratio; ++cycle) {
+        ESP_RETURN_ON_ERROR(append_pair_segment(instance, 0, true, input_high),
+                            "LESSONS", "Divider input HIGH failed");
+        ESP_RETURN_ON_ERROR(append_pair_segment(instance, 0, false, input_period - input_high),
+                            "LESSONS", "Divider input LOW failed");
+    }
+    ESP_RETURN_ON_ERROR(append_pair_segment(instance, 1, true, common_duration / 2U),
+                        "LESSONS", "Divider output HIGH failed");
+    ESP_RETURN_ON_ERROR(append_pair_segment(instance, 1, false, common_duration - common_duration / 2U),
+                        "LESSONS", "Divider output LOW failed");
+
+    uint32_t input_frequency = (1000000U + input_period / 2U) / input_period;
+    uint32_t output_frequency = (1000000U + common_duration / 2U) / common_duration;
+    instance->realized[0] = (scope_realized_channel_t){ input_frequency, input_period, input_high, 50 };
+    instance->realized[1] = (scope_realized_channel_t){ output_frequency, common_duration,
+                                                        common_duration / 2U, 50 };
+    instance->parameters.frequency_divider.ratio = ratio;
+    snprintf(instance->context, sizeof(instance->context),
+             "CH1 zeigt den Eingangstakt, CH2 den ganzzahlig geteilten Ausgangstakt.");
+    set_numeric_measurement(instance, 0, "Eingangsfrequenz", SCOPE_MEASUREMENT_CHANNEL_1,
+                            1000000.0 / input_period, input_frequency * 0.02, "Hz", 2, "fEin = 1 / TEin");
+    set_numeric_measurement(instance, 1, "Ausgangsfrequenz", SCOPE_MEASUREMENT_CHANNEL_2,
+                            1000000.0 / common_duration, output_frequency * 0.03, "Hz", 2, "fAus = 1 / TAus");
+    set_numeric_measurement(instance, 2, "Teilverhältnis", SCOPE_MEASUREMENT_DERIVED,
+                            ratio, 0, "zu 1", 0, "N = fEin / fAus");
+    return ESP_OK;
+}
+
+static esp_err_t generate_ultrasonic(scope_lesson_instance_t *instance)
+{
+    static const uint32_t easy_distances[] = { 10, 20, 50, 100 };
+    uint32_t distance = instance->difficulty == 1 ? choose(easy_distances, 4) :
+                        instance->difficulty == 2 ? random_range(5, 200) : random_range(20, 300);
+    uint32_t echo_width = distance * 58U;
+    uint32_t echo_delay = instance->difficulty == 1 ? 500U :
+                          instance->difficulty == 2 ? random_range(3, 10) * 100U :
+                                                      random_range(200, 1200);
+    uint32_t common_duration = 25000U;
+
+    begin_pair(instance);
+    ESP_RETURN_ON_ERROR(append_pair_segment(instance, 0, true, 10),
+                        "LESSONS", "Ultrasonic trigger failed");
+    ESP_RETURN_ON_ERROR(append_pair_segment(instance, 0, false, common_duration - 10U),
+                        "LESSONS", "Ultrasonic trigger idle failed");
+    ESP_RETURN_ON_ERROR(append_pair_segment(instance, 1, false, echo_delay),
+                        "LESSONS", "Ultrasonic echo delay failed");
+    ESP_RETURN_ON_ERROR(append_pair_segment(instance, 1, true, echo_width),
+                        "LESSONS", "Ultrasonic echo failed");
+    ESP_RETURN_ON_ERROR(append_pair_segment(instance, 1, false, common_duration - echo_delay - echo_width),
+                        "LESSONS", "Ultrasonic echo idle failed");
+
+    instance->realized[0] = (scope_realized_channel_t){ 40, common_duration, 10, 0 };
+    instance->realized[1] = (scope_realized_channel_t){ 40, common_duration, echo_width, 0 };
+    instance->parameters.ultrasonic.echo_delay_us = echo_delay;
+    instance->parameters.ultrasonic.distance_cm = distance;
+    snprintf(instance->context, sizeof(instance->context),
+             "Simulierter Ultraschallsensor: Die Echo-HIGH-Zeit entspricht 58 µs je Zentimeter.");
+    set_numeric_measurement(instance, 0, "Echo-Verzögerung", SCOPE_MEASUREMENT_CHANNEL_PAIR,
+                            echo_delay, echo_delay * 0.05, "µs", 0, "Trigger-Anstieg bis Echo-Anstieg");
+    set_numeric_measurement(instance, 1, "Echo-Pulsbreite", SCOPE_MEASUREMENT_CHANNEL_2,
+                            echo_width, echo_width * 0.03, "µs", 0, "HIGH-Zeit des Echo-Signals");
+    set_numeric_measurement(instance, 2, "Entfernung", SCOPE_MEASUREMENT_DERIVED,
+                            echo_width / 58.0, 2.0, "cm", 1, "s = tEcho / 58 µs/cm");
+    return ESP_OK;
+}
+
+static esp_err_t generate_gated_pwm(scope_lesson_instance_t *instance)
+{
+    static const uint32_t periods[] = { 500, 1000, 2000 };
+    uint32_t pwm_period = choose(periods, 3);
+    uint32_t pwm_high = instance->difficulty == 1 ? pwm_period / 2U :
+                        pwm_period * random_range(2, 8) / 10U;
+    uint32_t pulse_count = instance->difficulty == 1 ? random_range(3, 5) :
+                           instance->difficulty == 2 ? random_range(4, 8) : random_range(6, 10);
+    uint32_t start_delay = instance->difficulty == 1 ? pwm_period :
+                           instance->difficulty == 2 ? random_range(1, 3) * pwm_period / 2U :
+                                                       random_range(200, 2000);
+    uint32_t pre_idle = 3000U;
+    uint32_t end_margin = 2000U;
+    uint32_t gate_duration = start_delay + pulse_count * pwm_period + end_margin;
+    uint32_t common_duration = pre_idle + gate_duration + 5000U;
+
+    begin_pair(instance);
+    ESP_RETURN_ON_ERROR(append_pair_segment(instance, 0, false, pre_idle),
+                        "LESSONS", "Gate pre-idle failed");
+    ESP_RETURN_ON_ERROR(append_pair_segment(instance, 0, true, gate_duration),
+                        "LESSONS", "Gate window failed");
+    ESP_RETURN_ON_ERROR(append_pair_segment(instance, 0, false, common_duration - pre_idle - gate_duration),
+                        "LESSONS", "Gate post-idle failed");
+    ESP_RETURN_ON_ERROR(append_pair_segment(instance, 1, false, pre_idle + start_delay),
+                        "LESSONS", "Gated PWM delay failed");
+    for (uint32_t pulse = 0; pulse < pulse_count; ++pulse) {
+        ESP_RETURN_ON_ERROR(append_pair_segment(instance, 1, true, pwm_high),
+                            "LESSONS", "Gated PWM HIGH failed");
+        ESP_RETURN_ON_ERROR(append_pair_segment(instance, 1, false, pwm_period - pwm_high),
+                            "LESSONS", "Gated PWM LOW failed");
+    }
+    ESP_RETURN_ON_ERROR(append_pair_segment(instance, 1, false,
+                        common_duration - pre_idle - start_delay - pulse_count * pwm_period),
+                        "LESSONS", "Gated PWM post-idle failed");
+
+    uint32_t pwm_frequency = (1000000U + pwm_period / 2U) / pwm_period;
+    instance->realized[0] = (scope_realized_channel_t){ 0, common_duration, gate_duration, 0 };
+    instance->realized[1] = (scope_realized_channel_t){ pwm_frequency, pwm_period, pwm_high,
+                                                        (uint8_t)((100U * pwm_high) / pwm_period) };
+    instance->parameters.gated_pwm.start_delay_us = start_delay;
+    instance->parameters.gated_pwm.pulse_count = pulse_count;
+    snprintf(instance->context, sizeof(instance->context),
+             "CH1 ist das Freigabefenster; nur innerhalb dieses Fensters erscheint die PWM auf CH2.");
+    set_numeric_measurement(instance, 0, "PWM-Startverzögerung", SCOPE_MEASUREMENT_CHANNEL_PAIR,
+                            start_delay, start_delay * 0.04, "µs", 0, "Gate-Anstieg bis erster PWM-Anstieg");
+    set_numeric_measurement(instance, 1, "Pulse im Fenster", SCOPE_MEASUREMENT_CHANNEL_2,
+                            pulse_count, 0, "", 0, "Vollständige HIGH-Pulse zählen");
+    set_numeric_measurement(instance, 2, "Freigabedauer", SCOPE_MEASUREMENT_CHANNEL_1,
+                            gate_duration / 1000.0, gate_duration * 0.00003,
+                            "ms", 3, "HIGH-Zeit des Freigabefensters");
+    return ESP_OK;
+}
+
+static esp_err_t generate_quadrature(scope_lesson_instance_t *instance)
+{
+    static const uint32_t periods[] = { 1000, 2000, 4000 };
+    uint32_t period = choose(periods, 3);
+    uint32_t quarter = period / 4U;
+    bool channel_a_leads = instance->difficulty == 1 ? true : (esp_random() & 1U) != 0;
+
+    begin_pair(instance);
+    ESP_RETURN_ON_ERROR(append_pair_segment(instance, 0, true, period / 2U),
+                        "LESSONS", "Quadrature A HIGH failed");
+    ESP_RETURN_ON_ERROR(append_pair_segment(instance, 0, false, period / 2U),
+                        "LESSONS", "Quadrature A LOW failed");
+    if (channel_a_leads) {
+        ESP_RETURN_ON_ERROR(append_pair_segment(instance, 1, false, quarter),
+                            "LESSONS", "Quadrature B delay failed");
+        ESP_RETURN_ON_ERROR(append_pair_segment(instance, 1, true, period / 2U),
+                            "LESSONS", "Quadrature B HIGH failed");
+        ESP_RETURN_ON_ERROR(append_pair_segment(instance, 1, false, quarter),
+                            "LESSONS", "Quadrature B LOW failed");
+    } else {
+        ESP_RETURN_ON_ERROR(append_pair_segment(instance, 1, true, quarter),
+                            "LESSONS", "Quadrature B leading HIGH failed");
+        ESP_RETURN_ON_ERROR(append_pair_segment(instance, 1, false, period / 2U),
+                            "LESSONS", "Quadrature B LOW failed");
+        ESP_RETURN_ON_ERROR(append_pair_segment(instance, 1, true, quarter),
+                            "LESSONS", "Quadrature B wrap HIGH failed");
+    }
+
+    uint32_t frequency = (1000000U + period / 2U) / period;
+    instance->realized[0] = (scope_realized_channel_t){ frequency, period, period / 2U, 50 };
+    instance->realized[1] = instance->realized[0];
+    instance->parameters.quadrature.channel_a_leads = channel_a_leads;
+    instance->parameters.quadrature.quarter_period_us = quarter;
+    snprintf(instance->context, sizeof(instance->context),
+             "Spur A liegt auf CH1, Spur B auf CH2. Die führende Spur bestimmt die Richtung.");
+    set_numeric_measurement(instance, 0, "Periodendauer", SCOPE_MEASUREMENT_CHANNEL_1,
+                            period, period * 0.02, "µs", 0, "Abstand gleicher Flanken auf Spur A");
+    set_numeric_measurement(instance, 1, "Flankenversatz", SCOPE_MEASUREMENT_CHANNEL_PAIR,
+                            quarter, quarter * 0.03, "µs", 0, "Viertelperiode zwischen Spur A und B");
+    set_text_measurement(instance, 2, "Führende Spur", SCOPE_MEASUREMENT_CHANNEL_PAIR,
+                         channel_a_leads ? "A führt B" : "B führt A",
+                         "Die zuerst wechselnde Spur gibt die simulierte Richtung vor");
+    return ESP_OK;
+}
+
 static uint32_t signature_mix(uint32_t hash, uint32_t value)
 {
     hash ^= value;
@@ -460,6 +766,12 @@ esp_err_t scopebuddy_generate_lesson(scope_lesson_id_t id, uint8_t difficulty,
     case SCOPE_LESSON_BUTTON_BOUNCE: err = generate_button_bounce(instance); break;
     case SCOPE_LESSON_UART: err = generate_uart(instance); break;
     case SCOPE_LESSON_ALTERNATING: err = generate_alternating(instance); break;
+    case SCOPE_LESSON_TRIGGER_RESPONSE: err = generate_trigger_response(instance); break;
+    case SCOPE_LESSON_PHASE_SHIFT: err = generate_phase_shift(instance); break;
+    case SCOPE_LESSON_FREQUENCY_DIVIDER: err = generate_frequency_divider(instance); break;
+    case SCOPE_LESSON_ULTRASONIC: err = generate_ultrasonic(instance); break;
+    case SCOPE_LESSON_GATED_PWM: err = generate_gated_pwm(instance); break;
+    case SCOPE_LESSON_QUADRATURE: err = generate_quadrature(instance); break;
     default: err = ESP_ERR_INVALID_ARG; break;
     }
     if (err == ESP_OK) instance->signature = calculate_signature(instance);

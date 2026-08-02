@@ -19,6 +19,16 @@ ScopeBuddy 0.4 includes nine lessons with three difficulty levels each:
 - UART 8N1: bit time, nominal baud rate, and data byte
 - Alternating states: two frequencies and their state duration
 
+ScopeBuddy 0.5 development adds six synchronized two-channel lessons, also
+with three difficulty levels each:
+
+- Trigger/response: trigger width, response width, and reaction time
+- Phase shift: period, edge delay, and phase angle
+- Frequency divider: input/output frequency and integer divider ratio
+- Ultrasonic echo: response delay, echo width, and calculated distance
+- Gated PWM: gate duration, PWM start delay, and pulse count
+- Quadrature encoder: period, quarter-period edge offset, and leading track
+
 The continuous PWM lessons use the ESP32-P4 LEDC peripheral. Finite and
 irregular pulse sequences use the RMT peripheral at 1 MHz resolution so their
 displayed timing values match the generated hardware sequence.
@@ -27,10 +37,12 @@ displayed timing values match the generated hardware sequence.
 
 - Elecrow CrowPanel Advance 5-inch ESP32-P4, 800 × 480
 - Optional rotary encoder; see [ENCODER.md](ENCODER.md) for wiring
-- Oscilloscope input connected to `GPIO48` and board `GND`
+- Oscilloscope CH1 connected to `GPIO48`, CH2 to `GPIO47`, and both grounds to
+  board `GND` for two-channel lessons
 
-GPIO48 is a 3.3 V logic output intended for a high-impedance oscilloscope or
-logic-analyzer input. Do not connect loads or external voltages to it.
+GPIO47 and GPIO48 are 3.3 V logic outputs intended for high-impedance
+oscilloscope or logic-analyzer inputs. Do not connect loads or external
+voltages to them.
 
 ## Build
 
