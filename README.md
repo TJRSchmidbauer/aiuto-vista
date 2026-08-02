@@ -48,6 +48,27 @@ and touch-controller drivers declared in `main/idf_component.yml`. The checked-i
 
 ScopeBuddy 0.4 is built and hardware-tested with ESP-IDF 5.4.2.
 
+## Dual-channel hardware test
+
+The diagnostics screen contains a two-channel RMT test used to validate the
+planned ScopeBuddy 0.5 output pair:
+
+1. Open **Settings → Diagnostics → 2-channel test**.
+2. Connect oscilloscope CH1 to `GPIO48` and CH2 to `GPIO47`.
+3. Connect both probe grounds to the same board `GND`.
+4. Start the test on the display.
+
+Both channels output a 1 kHz signal with 50% duty cycle. The rising edge on
+GPIO47 follows the rising edge on GPIO48 by 100 µs. The two 1 ms timelines are
+started by the ESP32-P4 RMT synchronization manager and must not drift relative
+to each other.
+
+GPIO47 and GPIO48 share expansion connector functions. Do not attach or enable
+an expansion UART/SPI device while running this test.
+
+The test has been verified on the target CrowPanel: both outputs measured
+1 kHz at 50% duty cycle, with GPIO47 following GPIO48 by 100 µs as specified.
+
 ## Project structure
 
 - `main/` — ScopeBuddy application and LVGL user interface

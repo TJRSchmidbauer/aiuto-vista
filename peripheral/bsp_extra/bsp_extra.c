@@ -12,12 +12,26 @@
 #define SEQUENCE_RMT_RESOLUTION_HZ 1000000U
 #define SEQUENCE_RMT_SYMBOLS       48U
 #define SEQUENCE_RMT_MAX_DURATION  32767U
+#define SYNC_TEST_GPIO              GPIO_NUM_47
 
 static uint8_t wave_duty_percent = 50;
 static rmt_channel_handle_t sequence_channel;
 static rmt_encoder_handle_t sequence_encoder;
 static rmt_symbol_word_t sequence_symbols[SEQUENCE_RMT_SYMBOLS];
 static bool sequence_channel_enabled;
+static rmt_channel_handle_t sync_test_channel;
+static rmt_encoder_handle_t sync_test_encoder;
+static rmt_sync_manager_handle_t sync_test_manager;
+static bool sync_test_enabled;
+
+/* Both timelines are exactly 1 ms long. GPIO47 starts 100 us after GPIO48. */
+static const rmt_symbol_word_t sync_reference_symbols[] = {
+    { .level0 = 1, .duration0 = 500, .level1 = 0, .duration1 = 500 },
+};
+static const rmt_symbol_word_t sync_delayed_symbols[] = {
+    { .level0 = 0, .duration0 = 100, .level1 = 1, .duration1 = 500 },
+    { .level0 = 0, .duration0 = 200, .level1 = 0, .duration1 = 200 },
+};
 
 esp_err_t gpio_extra_init()                    // Function to initialize GPIO48 as output
 {
@@ -156,8 +170,99 @@ static esp_err_t ensure_sequence_rmt(void)
     return err;
 }
 
+static esp_err_t ensure_sync_test_rmt(void)
+{
+    if (sync_test_channel && sync_test_encoder) return ESP_OK;
+
+    rmt_tx_channel_config_t channel_config = {
+        .gpio_num = SYNC_TEST_GPIO,
+        .clk_src = RMT_CLK_SRC_DEFAULT,
+        .resolution_hz = SEQUENCE_RMT_RESOLUTION_HZ,
+        .mem_block_symbols = SEQUENCE_RMT_SYMBOLS,
+        .trans_queue_depth = 1,
+    };
+    ESP_RETURN_ON_ERROR(rmt_new_tx_channel(&channel_config, &sync_test_channel),
+                        EXTRA_TAG, "Creating GPIO47 RMT channel failed");
+
+    const rmt_copy_encoder_config_t encoder_config;
+    esp_err_t err = rmt_new_copy_encoder(&encoder_config, &sync_test_encoder);
+    if (err != ESP_OK) {
+        rmt_del_channel(sync_test_channel);
+        sync_test_channel = NULL;
+    }
+    return err;
+}
+
+esp_err_t gpio_sync_test_stop(void)
+{
+    if (!sync_test_enabled) return ESP_OK;
+
+    esp_err_t first_error = ESP_OK;
+    if (sync_test_manager) {
+        esp_err_t err = rmt_del_sync_manager(sync_test_manager);
+        if (err != ESP_OK) first_error = err;
+        else sync_test_manager = NULL;
+    }
+    esp_err_t err = rmt_disable(sequence_channel);
+    if (err != ESP_OK && first_error == ESP_OK) first_error = err;
+    err = rmt_disable(sync_test_channel);
+    if (err != ESP_OK && first_error == ESP_OK) first_error = err;
+    if (first_error == ESP_OK) {
+        sync_test_enabled = false;
+        sequence_channel_enabled = false;
+    }
+    return first_error;
+}
+
+esp_err_t gpio_sync_test_start(void)
+{
+    ESP_RETURN_ON_ERROR(gpio_sync_test_stop(), EXTRA_TAG, "Stopping previous sync test failed");
+    ESP_RETURN_ON_ERROR(gpio_sequence_stop(), EXTRA_TAG, "Stopping sequence before sync test failed");
+    ESP_RETURN_ON_ERROR(gpio_wave_stop(), EXTRA_TAG, "Stopping LEDC before sync test failed");
+    ESP_RETURN_ON_ERROR(ensure_sequence_rmt(), EXTRA_TAG, "Initializing GPIO48 RMT failed");
+    ESP_RETURN_ON_ERROR(ensure_sync_test_rmt(), EXTRA_TAG, "Initializing GPIO47 RMT failed");
+    ESP_RETURN_ON_ERROR(rmt_tx_switch_gpio(sequence_channel, WAVE_GPIO, false),
+                        EXTRA_TAG, "Routing GPIO48 sync output failed");
+    ESP_RETURN_ON_ERROR(rmt_tx_switch_gpio(sync_test_channel, SYNC_TEST_GPIO, false),
+                        EXTRA_TAG, "Routing GPIO47 sync output failed");
+
+    esp_err_t err = rmt_enable(sequence_channel);
+    if (err != ESP_OK) return err;
+    err = rmt_enable(sync_test_channel);
+    if (err != ESP_OK) {
+        rmt_disable(sequence_channel);
+        return err;
+    }
+    sync_test_enabled = true;
+
+    rmt_channel_handle_t channels[] = { sequence_channel, sync_test_channel };
+    const rmt_sync_manager_config_t manager_config = {
+        .tx_channel_array = channels,
+        .array_size = 2,
+    };
+    err = rmt_new_sync_manager(&manager_config, &sync_test_manager);
+    if (err != ESP_OK) {
+        gpio_sync_test_stop();
+        return err;
+    }
+
+    const rmt_transmit_config_t transmit_config = {
+        .loop_count = -1,
+        .flags.eot_level = 0,
+    };
+    err = rmt_transmit(sequence_channel, sequence_encoder, sync_reference_symbols,
+                       sizeof(sync_reference_symbols), &transmit_config);
+    if (err == ESP_OK) {
+        err = rmt_transmit(sync_test_channel, sync_test_encoder, sync_delayed_symbols,
+                           sizeof(sync_delayed_symbols), &transmit_config);
+    }
+    if (err != ESP_OK) gpio_sync_test_stop();
+    return err;
+}
+
 esp_err_t gpio_sequence_stop(void)
 {
+    if (sync_test_enabled) return gpio_sync_test_stop();
     if (!sequence_channel_enabled) return ESP_OK;
     esp_err_t err = rmt_disable(sequence_channel);
     if (err == ESP_OK) sequence_channel_enabled = false;

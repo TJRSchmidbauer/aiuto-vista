@@ -49,6 +49,9 @@ static lv_timer_t *game_clock;
 static lv_timer_t *splash_timer;
 static lv_timer_t *diagnostics_timer;
 static lv_obj_t *diagnostics_values_label;
+static lv_obj_t *sync_test_status_label;
+static lv_obj_t *sync_test_action_label;
+static bool sync_test_running;
 static uint32_t elapsed_seconds;
 static lv_obj_t *measurement_values[SCOPEBUDDY_MAX_MEASUREMENTS];
 static lv_obj_t *measurement_boxes[SCOPEBUDDY_MAX_MEASUREMENTS];
@@ -72,6 +75,7 @@ static void build_splash_screen(void);
 static void build_start_screen(void);
 static void build_settings_screen(void);
 static void build_diagnostics_screen(void);
+static void build_sync_test_screen(void);
 static void build_scope_reset_screen(void);
 static void build_question_screen(void);
 static void reveal_measurement(uint8_t index, const char *value);
@@ -418,6 +422,12 @@ static void build_diagnostics_async(void *data)
 {
     (void)data;
     build_diagnostics_screen();
+}
+
+static void build_sync_test_async(void *data)
+{
+    (void)data;
+    build_sync_test_screen();
 }
 
 static void build_start_async(void *data)
@@ -886,7 +896,52 @@ static void diagnostics_event(lv_event_t *event)
 static void diagnostics_back_event(lv_event_t *event)
 {
     (void)event;
+    log_operation_error("Stopping two-channel test", gpio_sync_test_stop());
+    sync_test_running = false;
     queue_ui_action(build_settings_async, "settings screen");
+}
+
+static void sync_test_open_event(lv_event_t *event)
+{
+    (void)event;
+    queue_ui_action(build_sync_test_async, "two-channel test");
+}
+
+static void sync_test_back_event(lv_event_t *event)
+{
+    (void)event;
+    log_operation_error("Stopping two-channel test", gpio_sync_test_stop());
+    sync_test_running = false;
+    queue_ui_action(build_diagnostics_async, "diagnostics screen");
+}
+
+static void sync_test_toggle_event(lv_event_t *event)
+{
+    (void)event;
+    const bool starting = !sync_test_running;
+    esp_err_t err;
+    if (starting) {
+        stop_pattern();
+        err = gpio_sync_test_start();
+        if (err == ESP_OK) sync_test_running = true;
+    } else {
+        err = gpio_sync_test_stop();
+        if (err == ESP_OK) sync_test_running = false;
+    }
+    log_operation_error(starting ? "Starting two-channel test" :
+                                   "Stopping two-channel test", err);
+    if (sync_test_status_label) {
+        lv_label_set_text(sync_test_status_label,
+                          err != ESP_OK ? "FEHLER - DETAILS IM SERIELLEN LOG" :
+                          sync_test_running ? "AKTIV - BEIDE KANÄLE MESSEN" : "GESTOPPT");
+        lv_obj_set_style_text_color(sync_test_status_label,
+                                    lv_color_hex(err != ESP_OK ? 0xE06B6B :
+                                                 sync_test_running ? 0x5DE08B : 0x8FA5C2), 0);
+    }
+    if (sync_test_action_label) {
+        lv_label_set_text(sync_test_action_label,
+                          sync_test_running ? "TEST STOPPEN" : "TEST STARTEN");
+    }
 }
 
 static void timer_setting_event(lv_event_t *event)
@@ -1126,6 +1181,8 @@ static void build_settings_screen(void)
 static void build_diagnostics_screen(void)
 {
     stop_pattern();
+    sync_test_status_label = NULL;
+    sync_test_action_label = NULL;
     lesson_selected = false;
     stop_diagnostics_updates();
     log_ui_memory("before diagnostics cleanup");
@@ -1155,6 +1212,9 @@ static void build_diagnostics_screen(void)
     lv_label_set_text(settings_symbol, LV_SYMBOL_SETTINGS);
     lv_obj_set_style_text_font(settings_symbol, &lv_font_montserrat_24, 0);
     lv_obj_center(settings_symbol);
+    lv_obj_t *sync_test_button = make_button(ui_Screen1, "2-KANAL-TEST", 570, 20, 140, 42,
+                                             0x1455B8, sync_test_open_event, NULL);
+    lv_obj_set_style_radius(sync_test_button, 8, 0);
     make_divider(ui_Screen1, 25, 92, 750);
 
     lv_obj_t *software_card = lv_obj_create(ui_Screen1);
@@ -1213,6 +1273,62 @@ static void build_diagnostics_screen(void)
     lv_group_t *encoder_group = lv_group_get_default();
     if (encoder_group) lv_group_focus_obj(back_button);
     log_ui_memory("diagnostics ready");
+}
+
+static void build_sync_test_screen(void)
+{
+    stop_diagnostics_updates();
+    stop_pattern();
+    sync_test_running = false;
+    lesson_selected = false;
+    lv_obj_clean(ui_Screen1);
+    confirm_overlay = NULL;
+    timer_label = NULL;
+    page_default_focus = NULL;
+
+    lv_obj_t *brand_logo = lv_img_create(ui_Screen1);
+    lv_img_set_src(brand_logo, &ui_img_scopebuddy_logo);
+    lv_obj_set_pos(brand_logo, 25, 18);
+    make_label(ui_Screen1, "ScopeBuddy", 67, 29, &lv_font_montserrat_24, 0xF4FAFF);
+    make_label(ui_Screen1, "2-KANAL-HARDWARETEST", 250, 32,
+               &lv_font_montserrat_14, 0x2684FF);
+
+    lv_obj_t *back_button = make_button(ui_Screen1, LV_SYMBOL_LEFT, 727, 20, 48, 42,
+                                        0x14263A, sync_test_back_event, NULL);
+    lv_obj_set_style_radius(back_button, 8, 0);
+    make_divider(ui_Screen1, 25, 92, 750);
+
+    lv_obj_t *card = lv_obj_create(ui_Screen1);
+    lv_obj_set_pos(card, 80, 118);
+    lv_obj_set_size(card, 640, 320);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_radius(card, 12, 0);
+    lv_obj_set_style_bg_color(card, lv_color_hex(0x0D1927), 0);
+    lv_obj_set_style_border_color(card, lv_color_hex(0x26384B), 0);
+    lv_obj_set_style_border_width(card, 1, 0);
+    lv_obj_set_style_pad_all(card, 0, 0);
+
+    make_label(card, "SYNCHRONISIERTE RMT-AUSGÄNGE", 28, 24,
+               &lv_font_montserrat_24, 0xF4FAFF);
+    lv_obj_t *description = make_label(
+        card,
+        "CH1 an GPIO48: 1 kHz, 50 % Tastgrad\n"
+        "CH2 an GPIO47: 1 kHz, 50 % Tastgrad\n"
+        "Erwarteter Versatz CH1 -> CH2: 100 µs\n"
+        "Beide Tastköpfe gegen denselben GND anschließen.",
+        28, 74, &lv_font_montserrat_14, 0xAFC2DC);
+    lv_obj_set_style_text_line_space(description, 8, 0);
+
+    sync_test_status_label = make_label(card, "GESTOPPT", 28, 205,
+                                        &lv_font_montserrat_14, 0x8FA5C2);
+    lv_obj_t *action_button = make_button(card, "TEST STARTEN", 360, 224, 250, 62,
+                                          0x1455B8, sync_test_toggle_event, NULL);
+    sync_test_action_label = lv_obj_get_child(action_button, 0);
+    page_default_focus = action_button;
+
+    lv_group_t *encoder_group = lv_group_get_default();
+    if (encoder_group) lv_group_focus_obj(action_button);
+    log_ui_memory("two-channel test ready");
 }
 
 static void build_scope_reset_screen(void)

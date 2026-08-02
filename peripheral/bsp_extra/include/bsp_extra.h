@@ -38,6 +38,8 @@ typedef struct {
 esp_err_t gpio_sequence_start(const gpio_wave_segment_t *segments,
                               size_t segment_count, bool loop);
 esp_err_t gpio_sequence_stop(void);
+esp_err_t gpio_sync_test_start(void);
+esp_err_t gpio_sync_test_stop(void);
 esp_err_t gpio_burst_start(uint32_t frequency_hz, uint8_t duty_percent,
                            uint8_t pulse_count, uint16_t pause_ms);
 esp_err_t gpio_burst_stop(void);
