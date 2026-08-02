@@ -3,6 +3,7 @@
 #include "ui.h"
 #include "encoder_input.h"
 #include "esp_system.h"
+#include "nvs_flash.h"
 
 static bool wave_hardware_ready;
 
@@ -94,6 +95,16 @@ void app_main(void)
     const esp_reset_reason_t reset_reason = esp_reset_reason();
     MAIN_INFO("Previous reset reason: %s (%d)",
               reset_reason_name(reset_reason), (int)reset_reason);
+
+    esp_err_t nvs_err = nvs_flash_init();
+    if (nvs_err == ESP_ERR_NVS_NO_FREE_PAGES || nvs_err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        MAIN_INFO("Reinitializing NVS settings storage...");
+        nvs_err = nvs_flash_erase();
+        if (nvs_err == ESP_OK) nvs_err = nvs_flash_init();
+    }
+    if (nvs_err != ESP_OK) {
+        MAIN_ERROR("NVS unavailable, settings will use defaults: %s", esp_err_to_name(nvs_err));
+    }
 
     // System initialization (including LDO, LCD, touch, LED and all hardware)
     system_init();

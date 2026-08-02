@@ -1,44 +1,37 @@
 #include "ui.h"
 #include "bsp_extra.h"
 #include "encoder_input.h"
-#include "esp_random.h"
+#include "scopebuddy_lessons.h"
 #include "esp_timer.h"
 #include "esp_log.h"
+#include "esp_system.h"
+#include "esp_app_desc.h"
+#include "esp_heap_caps.h"
+#include "nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 #include <stdio.h>
 
-#define SCOPEBUDDY_FIRMWARE_VERSION "0.3"
+#define SCOPEBUDDY_FIRMWARE_VERSION "0.4"
 #define UI_TAG "SCOPEBUDDY_UI"
+#define SETTINGS_NAMESPACE "scopebuddy"
+#define SETTINGS_KEY "ui_flags"
+#define SETTING_FLAG_TIMER       (1U << 0)
+#define SETTING_FLAG_VALUES      (1U << 1)
+#define SETTING_FLAG_SCOPE_RESET (1U << 2)
+#define SETTING_FLAG_ENCODER     (1U << 3)
 
 LV_FONT_DECLARE(scopebuddy_font_14);
 LV_FONT_DECLARE(scopebuddy_font_24);
 
-typedef enum {
-    GAME_NONE,
-    GAME_EASY,
-    GAME_MEDIUM,
-    GAME_HARD,
-} game_mode_t;
-
-typedef struct {
-    uint32_t frequency_hz;
-    uint8_t duty_percent;
-} signal_state_t;
-
-typedef struct {
-    signal_state_t state_a;
-    signal_state_t state_b;
-    uint16_t pause_ms;
-    uint16_t state_duration_ms;
-    uint8_t pulse_count;
-} challenge_t;
-
 static bool hardware_ready;
 static bool alternating_state_b;
 static uint8_t question_number;
-static game_mode_t game_mode;
-static challenge_t challenge;
+static bool lesson_selected;
+static scope_lesson_id_t selected_lesson;
+static scope_lesson_instance_t challenge;
+static uint8_t lesson_page;
 static esp_timer_handle_t pattern_timer;
 static StaticSemaphore_t pattern_mutex_buffer;
 static SemaphoreHandle_t pattern_mutex;
@@ -54,28 +47,86 @@ static lv_obj_t *advance_button;
 static lv_obj_t *timer_label;
 static lv_timer_t *game_clock;
 static lv_timer_t *splash_timer;
+static lv_timer_t *diagnostics_timer;
+static lv_obj_t *diagnostics_values_label;
 static uint32_t elapsed_seconds;
-static lv_obj_t *measurement_values[5];
-static lv_obj_t *measurement_boxes[5];
-static lv_obj_t *measurement_marks[5];
+static lv_obj_t *measurement_values[SCOPEBUDDY_MAX_MEASUREMENTS];
+static lv_obj_t *measurement_boxes[SCOPEBUDDY_MAX_MEASUREMENTS];
+static lv_obj_t *measurement_marks[SCOPEBUDDY_MAX_MEASUREMENTS];
 static lv_obj_t *confirm_overlay;
 static lv_group_t *confirm_group;
 static lv_group_t *confirm_background_group;
 static lv_obj_t *page_default_focus;
-static bool measurement_selected[5];
-static bool measurement_revealed[5];
+static bool measurement_selected[SCOPEBUDDY_MAX_MEASUREMENTS];
+static bool measurement_revealed[SCOPEBUDDY_MAX_MEASUREMENTS];
 static bool setting_show_timer = true;
 static bool setting_reveal_values;
 static bool setting_scope_reset = true;
 static bool setting_encoder_enabled = true;
+static bool settings_loaded;
 static bool splash_active;
 
 static void mode_event(lv_event_t *event);
+static void page_event(lv_event_t *event);
 static void build_splash_screen(void);
 static void build_start_screen(void);
 static void build_settings_screen(void);
+static void build_diagnostics_screen(void);
 static void build_scope_reset_screen(void);
 static void build_question_screen(void);
+static void reveal_measurement(uint8_t index, const char *value);
+static void log_operation_error(const char *operation, esp_err_t err);
+
+static uint8_t settings_flags(void)
+{
+    return (setting_show_timer ? SETTING_FLAG_TIMER : 0U) |
+           (setting_reveal_values ? SETTING_FLAG_VALUES : 0U) |
+           (setting_scope_reset ? SETTING_FLAG_SCOPE_RESET : 0U) |
+           (setting_encoder_enabled ? SETTING_FLAG_ENCODER : 0U);
+}
+
+static void load_settings(void)
+{
+    if (settings_loaded) return;
+    settings_loaded = true;
+
+    nvs_handle_t handle = 0;
+    esp_err_t err = nvs_open(SETTINGS_NAMESPACE, NVS_READONLY, &handle);
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+        ESP_LOGI(UI_TAG, "No stored settings; using defaults");
+        encoder_input_set_enabled(setting_encoder_enabled);
+        return;
+    }
+    if (err != ESP_OK) {
+        log_operation_error("Opening stored settings", err);
+        encoder_input_set_enabled(setting_encoder_enabled);
+        return;
+    }
+
+    uint8_t flags = 0;
+    err = nvs_get_u8(handle, SETTINGS_KEY, &flags);
+    nvs_close(handle);
+    if (err == ESP_OK) {
+        setting_show_timer = (flags & SETTING_FLAG_TIMER) != 0;
+        setting_reveal_values = (flags & SETTING_FLAG_VALUES) != 0;
+        setting_scope_reset = (flags & SETTING_FLAG_SCOPE_RESET) != 0;
+        setting_encoder_enabled = (flags & SETTING_FLAG_ENCODER) != 0;
+        ESP_LOGI(UI_TAG, "Loaded settings flags: 0x%02x", flags);
+    } else if (err != ESP_ERR_NVS_NOT_FOUND) {
+        log_operation_error("Reading stored settings", err);
+    }
+    encoder_input_set_enabled(setting_encoder_enabled);
+}
+
+static void save_settings(void)
+{
+    nvs_handle_t handle = 0;
+    esp_err_t err = nvs_open(SETTINGS_NAMESPACE, NVS_READWRITE, &handle);
+    if (err == ESP_OK) err = nvs_set_u8(handle, SETTINGS_KEY, settings_flags());
+    if (err == ESP_OK) err = nvs_commit(handle);
+    if (handle) nvs_close(handle);
+    log_operation_error("Saving settings", err);
+}
 
 static void log_ui_memory(const char *stage)
 {
@@ -101,34 +152,43 @@ static void log_operation_error(const char *operation, esp_err_t err)
 static void clock_callback(lv_timer_t *timer)
 {
     (void)timer;
-    if (game_mode == GAME_NONE || !timer_label) return;
+    if (!lesson_selected || !timer_label) return;
     ++elapsed_seconds;
     lv_label_set_text_fmt(timer_label, "%02lu:%02lu",
                           (unsigned long)(elapsed_seconds / 60U),
                           (unsigned long)(elapsed_seconds % 60U));
 }
 
-static uint32_t random_range(uint32_t minimum, uint32_t maximum)
-{
-    return minimum + (esp_random() % (maximum - minimum + 1U));
-}
-
 static const char *mode_name(void)
 {
-    if (game_mode == GAME_EASY) return "LEICHT";
-    if (game_mode == GAME_MEDIUM) return "MITTEL";
-    return "SCHWER";
+    return challenge.lesson ? challenge.lesson->title : "LEKTION";
+}
+
+static const char *reset_reason_name(esp_reset_reason_t reason)
+{
+    switch (reason) {
+    case ESP_RST_POWERON: return "POWER-ON";
+    case ESP_RST_EXT: return "EXTERNER RESET";
+    case ESP_RST_SW: return "SOFTWARE-RESET";
+    case ESP_RST_PANIC: return "PANIC/ASSERT";
+    case ESP_RST_INT_WDT: return "INTERRUPT-WATCHDOG";
+    case ESP_RST_TASK_WDT: return "TASK-WATCHDOG";
+    case ESP_RST_WDT: return "WATCHDOG";
+    case ESP_RST_DEEPSLEEP: return "DEEP-SLEEP";
+    case ESP_RST_BROWNOUT: return "BROWNOUT";
+    case ESP_RST_SDIO: return "SDIO";
+    case ESP_RST_USB: return "USB";
+    case ESP_RST_JTAG: return "JTAG";
+    case ESP_RST_EFUSE: return "EFUSE-FEHLER";
+    case ESP_RST_PWR_GLITCH: return "POWER-GLITCH";
+    case ESP_RST_CPU_LOCKUP: return "CPU-LOCKUP";
+    default: return "UNBEKANNT";
+    }
 }
 
 static uint32_t challenge_signature(void)
 {
-    uint32_t value = challenge.state_a.frequency_hz * 2654435761U;
-    value ^= ((uint32_t)challenge.state_a.duty_percent << 24);
-    value ^= ((uint32_t)challenge.pulse_count << 16);
-    value ^= challenge.state_b.frequency_hz * 2246822519U;
-    value ^= ((uint32_t)challenge.state_b.duty_percent << 8);
-    value ^= challenge.pause_ms | ((uint32_t)challenge.state_duration_ms << 16);
-    return value;
+    return challenge.signature;
 }
 
 static bool signature_seen(uint32_t signature)
@@ -158,7 +218,7 @@ static void stop_pattern_locked(void)
             log_operation_error("Stopping signal timer", err);
         }
     }
-    log_operation_error("Stopping burst output", gpio_burst_stop());
+    log_operation_error("Stopping sequence output", gpio_sequence_stop());
     log_operation_error("Stopping GPIO48 output", gpio_wave_stop());
 }
 
@@ -195,16 +255,17 @@ static void pattern_callback(void *arg)
         return;
     }
 
-    if (game_mode == GAME_HARD) {
+    if (challenge.signal.kind == SCOPE_SIGNAL_ALTERNATING) {
+        const scope_alternating_spec_t *alternating = &challenge.signal.data.alternating;
         alternating_state_b = !alternating_state_b;
         esp_err_t err = gpio_wave_set_frequency(
-            alternating_state_b ? challenge.state_b.frequency_hz : challenge.state_a.frequency_hz);
+            alternating_state_b ? alternating->state_b.frequency_hz : alternating->state_a.frequency_hz);
         if (err == ESP_OK) {
-            err = gpio_wave_set_duty(alternating_state_b ? challenge.state_b.duty_percent :
-                                                            challenge.state_a.duty_percent);
+            err = gpio_wave_set_duty(alternating_state_b ? alternating->state_b.duty_percent :
+                                                            alternating->state_a.duty_percent);
         }
         if (err == ESP_OK) {
-            schedule_pattern_locked((uint64_t)challenge.state_duration_ms * 1000ULL);
+            schedule_pattern_locked((uint64_t)alternating->state_duration_ms * 1000ULL);
         } else {
             pattern_enabled = false;
             log_operation_error("Switching alternating output", err);
@@ -236,29 +297,17 @@ static void ensure_pattern_timer(void)
 
 static void generate_challenge(void)
 {
-    uint32_t signature;
+    esp_err_t err;
+    uint8_t attempts = 0;
     do {
-        challenge = (challenge_t){0};
-        if (game_mode == GAME_EASY) {
-            challenge.state_a.frequency_hz = random_range(50, 10000);
-            challenge.state_a.duty_percent = random_range(10, 90);
-        } else if (game_mode == GAME_MEDIUM) {
-            challenge.state_a.frequency_hz = random_range(100, 2000);
-            challenge.state_a.duty_percent = random_range(15, 85);
-            challenge.pulse_count = random_range(3, 15);
-            challenge.pause_ms = random_range(10, 100);
-        } else {
-            challenge.state_a.frequency_hz = random_range(100, 8000);
-            do challenge.state_b.frequency_hz = random_range(100, 8000);
-            while (challenge.state_b.frequency_hz > challenge.state_a.frequency_hz * 4U / 5U &&
-                   challenge.state_b.frequency_hz < challenge.state_a.frequency_hz * 6U / 5U);
-            challenge.state_a.duty_percent = random_range(10, 90);
-            challenge.state_b.duty_percent = random_range(10, 90);
-            challenge.state_duration_ms = random_range(150, 1200);
+        err = scopebuddy_generate_lesson(selected_lesson, question_number, &challenge);
+        if (err != ESP_OK) {
+            log_operation_error("Generating lesson", err);
+            return;
         }
-        signature = challenge_signature();
-    } while (signature_seen(signature));
-    remember_signature(signature);
+        ++attempts;
+    } while (signature_seen(challenge_signature()) && attempts < 20U);
+    remember_signature(challenge_signature());
 }
 
 static void start_challenge_signal(void)
@@ -271,14 +320,14 @@ static void start_challenge_signal(void)
     stop_pattern_locked();
 
     esp_err_t err;
-    if (game_mode == GAME_MEDIUM) {
-        err = gpio_burst_start(challenge.state_a.frequency_hz,
-                               challenge.state_a.duty_percent,
-                               challenge.pulse_count,
-                               challenge.pause_ms);
+    if (challenge.signal.kind == SCOPE_SIGNAL_SEQUENCE) {
+        const scope_sequence_spec_t *sequence = &challenge.signal.data.sequence;
+        err = gpio_sequence_start(sequence->segments, sequence->segment_count, sequence->loop);
     } else {
-        err = gpio_wave_set_frequency(challenge.state_a.frequency_hz);
-        if (err == ESP_OK) err = gpio_wave_set_duty(challenge.state_a.duty_percent);
+        const scope_pwm_spec_t *state_a = challenge.signal.kind == SCOPE_SIGNAL_PWM ?
+            &challenge.signal.data.pwm : &challenge.signal.data.alternating.state_a;
+        err = gpio_wave_set_frequency(state_a->frequency_hz);
+        if (err == ESP_OK) err = gpio_wave_set_duty(state_a->duty_percent);
         if (err == ESP_OK) err = gpio_wave_start();
     }
     if (err != ESP_OK) {
@@ -287,10 +336,29 @@ static void start_challenge_signal(void)
         return;
     }
 
-    if (game_mode == GAME_HARD) {
+    if (challenge.signal.kind == SCOPE_SIGNAL_PWM) {
+        uint32_t actual_frequency = 0;
+        uint8_t actual_duty = 0;
+        if (gpio_wave_get_effective(&actual_frequency, &actual_duty) == ESP_OK) {
+            scopebuddy_update_effective_pwm(&challenge, actual_frequency, actual_duty, 0, 0);
+        }
+    } else if (challenge.signal.kind == SCOPE_SIGNAL_ALTERNATING) {
+        const scope_alternating_spec_t *alternating = &challenge.signal.data.alternating;
+        uint32_t actual_a = 0;
+        uint32_t actual_b = 0;
+        uint8_t duty_a = 0;
+        uint8_t duty_b = 0;
+        if (gpio_wave_get_effective(&actual_a, &duty_a) == ESP_OK &&
+            gpio_wave_set_frequency(alternating->state_b.frequency_hz) == ESP_OK &&
+            gpio_wave_set_duty(alternating->state_b.duty_percent) == ESP_OK &&
+            gpio_wave_get_effective(&actual_b, &duty_b) == ESP_OK &&
+            gpio_wave_set_frequency(alternating->state_a.frequency_hz) == ESP_OK &&
+            gpio_wave_set_duty(alternating->state_a.duty_percent) == ESP_OK) {
+            scopebuddy_update_effective_pwm(&challenge, actual_a, duty_a, actual_b, duty_b);
+        }
         pattern_enabled = true;
         alternating_state_b = false;
-        schedule_pattern_locked((uint64_t)challenge.state_duration_ms * 1000ULL);
+        schedule_pattern_locked((uint64_t)alternating->state_duration_ms * 1000ULL);
     }
     xSemaphoreGive(pattern_mutex);
 }
@@ -307,8 +375,11 @@ static void start_scope_reset_signal(void)
     /* Use the safe extremes supported by the GPIO waveform driver. The choice
        is based on the signal state shown first in the upcoming challenge so
        AUTO leaves the horizontal timebase as far away from it as possible. */
-    uint32_t reset_frequency =
-        (challenge.state_a.frequency_hz < 448U) ? 20000U : 10U;
+    uint32_t challenge_frequency = challenge.actual_frequency_a_hz;
+    if (challenge_frequency == 0 && challenge.period_us > 0) {
+        challenge_frequency = 1000000U / challenge.period_us;
+    }
+    uint32_t reset_frequency = (challenge_frequency < 448U) ? 20000U : 10U;
     esp_err_t err = gpio_wave_set_frequency(reset_frequency);
     if (err == ESP_OK) err = gpio_wave_set_duty(50);
     if (err == ESP_OK) err = gpio_wave_start();
@@ -341,6 +412,12 @@ static void build_settings_async(void *data)
 {
     (void)data;
     build_settings_screen();
+}
+
+static void build_diagnostics_async(void *data)
+{
+    (void)data;
+    build_diagnostics_screen();
 }
 
 static void build_start_async(void *data)
@@ -422,7 +499,7 @@ static void build_splash_screen(void)
 {
     log_ui_memory("before splash cleanup");
     lv_obj_clean(ui_Screen1);
-    game_mode = GAME_NONE;
+    lesson_selected = false;
     timer_label = NULL;
     splash_active = true;
 
@@ -516,7 +593,7 @@ static void update_solution_buttons(void)
     bool any_selected = false;
     bool all_selected_visible = true;
     bool all_visible = true;
-    for (uint8_t i = 0; i < 5; ++i) {
+    for (uint8_t i = 0; i < challenge.measurement_count; ++i) {
         if (measurement_selected[i]) {
             any_selected = true;
             if (!measurement_revealed[i]) all_selected_visible = false;
@@ -598,8 +675,17 @@ static void hide_measurement(uint8_t index)
     measurement_revealed[index] = false;
 }
 
-static void make_mode_card(int x, game_mode_t mode, const char *title, const char *subtitle,
-                           const char *details, uint32_t accent)
+static void apply_direct_value_setting(void)
+{
+    if (!setting_reveal_values) return;
+    for (uint8_t i = 0; i < challenge.measurement_count; ++i) {
+        if (measurement_values[i]) reveal_measurement(i, challenge.measurements[i].value);
+    }
+    if (all_values_button) lv_obj_add_flag(all_values_button, LV_OBJ_FLAG_HIDDEN);
+    if (action_button) lv_obj_add_flag(action_button, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void make_mode_card(int x, const scope_lesson_definition_t *lesson)
 {
     lv_obj_t *card = lv_obj_create(ui_Screen1);
     lv_obj_set_pos(card, x, 122);
@@ -607,96 +693,54 @@ static void make_mode_card(int x, game_mode_t mode, const char *title, const cha
     lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_radius(card, 10, 0);
     lv_obj_set_style_bg_color(card, lv_color_hex(0x0D1927), 0);
-    lv_obj_set_style_border_color(card, lv_color_hex(accent), 0);
     lv_obj_set_style_border_width(card, 1, 0);
     lv_obj_set_style_pad_all(card, 0, 0);
 
-    make_label(card, title, 18, 20, &lv_font_montserrat_24, accent);
-    make_label(card, subtitle, 18, 58, &lv_font_montserrat_14, 0xDCE8F7);
-    lv_obj_t *description = make_label(card, details, 18, 98,
+    lv_obj_set_style_border_color(card, lv_color_hex(lesson->accent), 0);
+    lv_obj_t *title = make_label(card, lesson->title, 18, 20,
+                                 &lv_font_montserrat_24, lesson->accent);
+    lv_obj_set_width(title, 198);
+    lv_obj_set_style_text_font(title, &scopebuddy_font_14, 0);
+    make_label(card, lesson->category, 18, 58, &lv_font_montserrat_14, 0xDCE8F7);
+    lv_obj_t *description = make_label(card, lesson->summary, 18, 98,
                                        &lv_font_montserrat_14, 0x8FA5C2);
     lv_obj_set_width(description, 194);
     lv_obj_set_style_text_line_space(description, 6, 0);
-    make_label(card, "3 MESSAUFGABEN", 18, 190, &lv_font_montserrat_14, 0x607895);
-    make_button(card, "STARTEN", 18, 222, 194, 42, accent,
-                mode_event, (void *)(uintptr_t)mode);
+    make_label(card, "3 STUFEN", 18, 190, &lv_font_montserrat_14, 0x607895);
+    make_button(card, "STARTEN", 18, 222, 194, 42, lesson->accent,
+                mode_event, (void *)(uintptr_t)lesson->id);
 }
 
 static void mode_event(lv_event_t *event)
 {
-    game_mode = (game_mode_t)(uintptr_t)lv_event_get_user_data(event);
+    selected_lesson = (scope_lesson_id_t)(uintptr_t)lv_event_get_user_data(event);
+    lesson_selected = true;
     question_number = 1;
     queue_ui_action(prepare_question_async, "prepare question");
 }
 
+static void page_event(lv_event_t *event)
+{
+    intptr_t direction = (intptr_t)lv_event_get_user_data(event);
+    if (direction < 0 && lesson_page > 0) --lesson_page;
+    if (direction > 0 && lesson_page < 2) ++lesson_page;
+    queue_ui_action(build_start_async, "lesson page");
+}
+
 static void reveal_selected_value(uint8_t index)
 {
-    char value[80];
-    double period_us = 1000000.0 / challenge.state_a.frequency_hz;
-    if (game_mode == GAME_EASY) {
-        if (index == 0) {
-            snprintf(value, sizeof(value), "%lu Hz", (unsigned long)challenge.state_a.frequency_hz);
-        } else if (index == 1) {
-            snprintf(value, sizeof(value), "%u %%", challenge.state_a.duty_percent);
-        } else if (index == 2) {
-            snprintf(value, sizeof(value), "%.2f µs", period_us);
-        } else if (index == 3) {
-            snprintf(value, sizeof(value), "ca. 3.30 V");
-        } else {
-            snprintf(value, sizeof(value), "ca. %.2f V",
-                     3.3 * challenge.state_a.duty_percent / 100.0);
-        }
-    } else if (game_mode == GAME_MEDIUM) {
-        uint32_t rmt_period_us = 0;
-        uint32_t high_time_us = 0;
-        esp_err_t timing_err = gpio_burst_get_timing_us(challenge.state_a.frequency_hz,
-                                                        challenge.state_a.duty_percent,
-                                                        &rmt_period_us,
-                                                        &high_time_us);
-        if (timing_err != ESP_OK) {
-            reveal_measurement(index, "FEHLER");
-            log_operation_error("Calculating displayed burst timing", timing_err);
-            return;
-        }
-        double actual_frequency_hz = 1000000.0 / rmt_period_us;
-        double actual_duty_percent = 100.0 * high_time_us / rmt_period_us;
-        double burst_duration_ms =
-            ((double)(challenge.pulse_count - 1U) * rmt_period_us + high_time_us) / 1000.0;
-        if (index == 0) {
-            snprintf(value, sizeof(value), "%.2f Hz", actual_frequency_hz);
-        } else if (index == 1) {
-            snprintf(value, sizeof(value), "%.2f %%", actual_duty_percent);
-        } else if (index == 2) {
-            snprintf(value, sizeof(value), "%u", challenge.pulse_count);
-        } else if (index == 3) {
-            snprintf(value, sizeof(value), "%.3f ms", burst_duration_ms);
-        } else {
-            snprintf(value, sizeof(value), "%u ms", challenge.pause_ms);
-        }
-    } else {
-        if (index == 0) {
-            snprintf(value, sizeof(value), "%lu Hz", (unsigned long)challenge.state_a.frequency_hz);
-        } else if (index == 1) {
-            snprintf(value, sizeof(value), "%u %%", challenge.state_a.duty_percent);
-        } else if (index == 2) {
-            snprintf(value, sizeof(value), "%lu Hz", (unsigned long)challenge.state_b.frequency_hz);
-        } else if (index == 3) {
-            snprintf(value, sizeof(value), "%u %%", challenge.state_b.duty_percent);
-        } else {
-            snprintf(value, sizeof(value), "%u ms", challenge.state_duration_ms);
-        }
-    }
-    reveal_measurement(index, value);
+    if (index >= challenge.measurement_count) return;
+    reveal_measurement(index, challenge.measurements[index].value);
 }
 
 static void solve_event(lv_event_t *event)
 {
     (void)event;
     bool hide_selected = true;
-    for (uint8_t i = 0; i < 5; ++i) {
+    for (uint8_t i = 0; i < challenge.measurement_count; ++i) {
         if (measurement_selected[i] && !measurement_revealed[i]) hide_selected = false;
     }
-    for (uint8_t i = 0; i < 5; ++i) {
+    for (uint8_t i = 0; i < challenge.measurement_count; ++i) {
         if (!measurement_selected[i]) continue;
         if (hide_selected) hide_measurement(i);
         else reveal_selected_value(i);
@@ -708,10 +752,10 @@ static void solve_all_event(lv_event_t *event)
 {
     (void)event;
     bool hide_all = true;
-    for (uint8_t i = 0; i < 5; ++i) {
+    for (uint8_t i = 0; i < challenge.measurement_count; ++i) {
         if (!measurement_revealed[i]) hide_all = false;
     }
-    for (uint8_t i = 0; i < 5; ++i) {
+    for (uint8_t i = 0; i < challenge.measurement_count; ++i) {
         if (hide_all) hide_measurement(i);
         else reveal_selected_value(i);
     }
@@ -833,22 +877,37 @@ static void settings_home_event(lv_event_t *event)
     queue_ui_action(build_start_async, "start screen");
 }
 
+static void diagnostics_event(lv_event_t *event)
+{
+    (void)event;
+    queue_ui_action(build_diagnostics_async, "diagnostics screen");
+}
+
+static void diagnostics_back_event(lv_event_t *event)
+{
+    (void)event;
+    queue_ui_action(build_settings_async, "settings screen");
+}
+
 static void timer_setting_event(lv_event_t *event)
 {
     lv_obj_t *toggle = lv_event_get_target(event);
     setting_show_timer = lv_obj_has_state(toggle, LV_STATE_CHECKED);
+    save_settings();
 }
 
 static void values_setting_event(lv_event_t *event)
 {
     lv_obj_t *toggle = lv_event_get_target(event);
     setting_reveal_values = lv_obj_has_state(toggle, LV_STATE_CHECKED);
+    save_settings();
 }
 
 static void scope_reset_setting_event(lv_event_t *event)
 {
     lv_obj_t *toggle = lv_event_get_target(event);
     setting_scope_reset = lv_obj_has_state(toggle, LV_STATE_CHECKED);
+    save_settings();
 }
 
 static void encoder_setting_event(lv_event_t *event)
@@ -856,6 +915,7 @@ static void encoder_setting_event(lv_event_t *event)
     lv_obj_t *toggle = lv_event_get_target(event);
     setting_encoder_enabled = lv_obj_has_state(toggle, LV_STATE_CHECKED);
     encoder_input_set_enabled(setting_encoder_enabled);
+    save_settings();
 }
 
 static void make_setting_row(const char *title, const char *description, int y,
@@ -886,15 +946,64 @@ static void make_setting_row(const char *title, const char *description, int y,
     lv_obj_add_event_cb(toggle, encoder_input_touch_event, LV_EVENT_PRESSED, NULL);
 }
 
+static void stop_diagnostics_updates(void)
+{
+    if (diagnostics_timer) {
+        lv_timer_del(diagnostics_timer);
+        diagnostics_timer = NULL;
+    }
+    diagnostics_values_label = NULL;
+}
+
+static void diagnostics_update(lv_timer_t *timer)
+{
+    (void)timer;
+    if (!diagnostics_values_label) return;
+
+    uint64_t uptime_seconds = (uint64_t)esp_timer_get_time() / 1000000ULL;
+    size_t free_heap = esp_get_free_heap_size();
+    size_t minimum_heap = esp_get_minimum_free_heap_size();
+    size_t internal_heap = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    size_t psram_heap = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    size_t largest_block = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    UBaseType_t stack_reserve = uxTaskGetStackHighWaterMark(NULL);
+    lv_mem_monitor_t lv_memory;
+    lv_mem_monitor(&lv_memory);
+
+    lv_label_set_text_fmt(
+        diagnostics_values_label,
+        "%s (%d)\n"
+        "%02llu:%02llu:%02llu\n"
+        "%lu KB\n"
+        "%lu KB\n"
+        "%lu KB\n"
+        "%lu KB\n"
+        "%lu KB\n"
+        "%lu KB\n"
+        "%u %%\n"
+        "%lu Bytes",
+        reset_reason_name(esp_reset_reason()), (int)esp_reset_reason(),
+        (unsigned long long)(uptime_seconds / 3600ULL),
+        (unsigned long long)((uptime_seconds / 60ULL) % 60ULL),
+        (unsigned long long)(uptime_seconds % 60ULL),
+        (unsigned long)(free_heap / 1024U),
+        (unsigned long)(minimum_heap / 1024U), (unsigned long)(internal_heap / 1024U),
+        (unsigned long)(psram_heap / 1024U),
+        (unsigned long)(largest_block / 1024U),
+        (unsigned long)(lv_memory.free_size / 1024U), lv_memory.frag_pct,
+        (unsigned long)stack_reserve);
+}
+
 static void build_start_screen(void)
 {
+    stop_diagnostics_updates();
     if (splash_timer) {
         lv_timer_del(splash_timer);
         splash_timer = NULL;
     }
     splash_active = false;
     stop_pattern();
-    game_mode = GAME_NONE;
+    lesson_selected = false;
     log_ui_memory("before start cleanup");
     lv_obj_clean(ui_Screen1);
     confirm_overlay = NULL;
@@ -909,14 +1018,27 @@ static void build_start_screen(void)
     (void)brand_title;
     make_divider(ui_Screen1, 25, 92, 750);
 
-    make_mode_card(25, GAME_EASY, "LEICHT", "GRUNDLAGEN",
-                   "Kontinuierliche Signale\nFrequenz, Tastgrad, Periode\nund Spannungswerte", 0x2684FF);
-    make_mode_card(285, GAME_MEDIUM, "MITTEL", "BURSTSIGNALE",
-                   "Exakte Impulspakete\nPulszahl, Burstdauer\nund Low-Pause", 0xD59A28);
-    make_mode_card(545, GAME_HARD, "SCHWER", "WECHSELSIGNALE",
-                   "Zwei Signalzustände\nWerte A und B sowie\ndie Zustandsdauer", 0xC14F71);
+    size_t first_lesson = (size_t)lesson_page * 3U;
+    for (size_t card = 0; card < 3; ++card) {
+        const scope_lesson_definition_t *lesson = scopebuddy_lesson_at(first_lesson + card);
+        if (lesson) make_mode_card(25 + (int)card * 260, lesson);
+    }
     make_label(ui_Screen1, "Das Messsignal wird an GPIO48 ausgegeben.",
                25, 438, &lv_font_montserrat_14, 0x2684FF);
+    char page_text[16];
+    snprintf(page_text, sizeof(page_text), "%u / 3", lesson_page + 1U);
+    lv_obj_t *page_indicator = make_label(ui_Screen1, page_text, 635, 438,
+                                          &lv_font_montserrat_14, 0x8FA5C2);
+    lv_obj_set_width(page_indicator, 80);
+    lv_obj_set_style_text_align(page_indicator, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_t *previous = make_button(ui_Screen1, LV_SYMBOL_LEFT, 575, 420, 48, 38,
+                                     0x26384B, page_event, (void *)(intptr_t)-1);
+    lv_obj_t *next = make_button(ui_Screen1, LV_SYMBOL_RIGHT, 727, 420, 48, 38,
+                                 0x26384B, page_event, (void *)(intptr_t)1);
+    lv_obj_set_style_text_font(lv_obj_get_child(previous, 0), &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(lv_obj_get_child(next, 0), &lv_font_montserrat_24, 0);
+    if (lesson_page == 0) lv_obj_add_state(previous, LV_STATE_DISABLED);
+    if (lesson_page == 2) lv_obj_add_state(next, LV_STATE_DISABLED);
 
     lv_obj_t *settings_button = lv_btn_create(ui_Screen1);
     lv_obj_set_pos(settings_button, 727, 20);
@@ -936,8 +1058,9 @@ static void build_start_screen(void)
 
 static void build_settings_screen(void)
 {
+    stop_diagnostics_updates();
     stop_pattern();
-    game_mode = GAME_NONE;
+    lesson_selected = false;
     log_ui_memory("before settings cleanup");
     lv_obj_clean(ui_Screen1);
     confirm_overlay = NULL;
@@ -958,6 +1081,7 @@ static void build_settings_screen(void)
     lv_obj_set_style_bg_color(home_button, lv_color_hex(0x14263A), 0);
     lv_obj_set_style_border_color(home_button, lv_color_hex(0x2684FF), 0);
     lv_obj_set_style_border_width(home_button, 1, 0);
+    lv_obj_remove_style(home_button, NULL, LV_STATE_FOCUSED | LV_STATE_FOCUS_KEY);
     lv_obj_add_event_cb(home_button, settings_home_event, LV_EVENT_RELEASED, NULL);
     lv_obj_add_event_cb(home_button, encoder_input_touch_event, LV_EVENT_PRESSED, NULL);
     lv_obj_t *home_symbol = lv_label_create(home_button);
@@ -971,7 +1095,7 @@ static void build_settings_screen(void)
                      "Zeigt die verstrichene Zeit auf den Messaufgabenseiten.",
                      101, setting_show_timer, timer_setting_event);
     make_setting_row("WERTE DIREKT ANZEIGEN",
-                     "Zeigt alle Sollwerte sofort und entfernt die Lösungsbuttons.",
+                     "Zeigt alle Lösungswerte sofort und entfernt die Lösungsbuttons.",
                      173, setting_reveal_values, values_setting_event);
     make_setting_row("AUTO-VORBEREITUNG",
                      "Gibt vor jeder Messaufgabe ein Referenzsignal für AUTO aus.",
@@ -980,20 +1104,115 @@ static void build_settings_screen(void)
                      "Aktiviert Drehsteuerung und weiße Auswahlkontur.",
                      317, setting_encoder_enabled, encoder_setting_event);
 
-    lv_obj_t *version_card = lv_obj_create(ui_Screen1);
-    lv_obj_set_pos(version_card, 25, 397);
-    lv_obj_set_size(version_card, 750, 50);
-    lv_obj_clear_flag(version_card, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_radius(version_card, 10, 0);
-    lv_obj_set_style_bg_color(version_card, lv_color_hex(0x0D1927), 0);
-    lv_obj_set_style_border_color(version_card, lv_color_hex(0x26384B), 0);
-    lv_obj_set_style_border_width(version_card, 1, 0);
-    lv_obj_set_style_pad_all(version_card, 0, 0);
-    make_label(version_card, "FIRMWARE-VERSION", 22, 14,
-               &lv_font_montserrat_14, 0xAFC2DC);
-    make_label(version_card, SCOPEBUDDY_FIRMWARE_VERSION, 680, 8,
-               &lv_font_montserrat_24, 0x2684FF);
+    lv_obj_t *diagnostics_button = lv_btn_create(ui_Screen1);
+    lv_obj_set_pos(diagnostics_button, 25, 397);
+    lv_obj_set_size(diagnostics_button, 750, 50);
+    lv_obj_set_style_bg_color(diagnostics_button, lv_color_hex(0x0D1927), 0);
+    lv_obj_set_style_radius(diagnostics_button, 10, 0);
+    lv_obj_set_style_border_color(diagnostics_button, lv_color_hex(0x26384B), 0);
+    lv_obj_set_style_border_width(diagnostics_button, 1, 0);
+    lv_obj_add_event_cb(diagnostics_button, diagnostics_event, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(diagnostics_button, encoder_input_touch_event, LV_EVENT_PRESSED, NULL);
+    make_label(diagnostics_button, "DIAGNOSE", 8, 8,
+               &lv_font_montserrat_14, 0xDCE8F7);
+    lv_obj_t *diagnostics_arrow = lv_label_create(diagnostics_button);
+    lv_label_set_text(diagnostics_arrow, LV_SYMBOL_RIGHT);
+    lv_obj_set_pos(diagnostics_arrow, 692, 8);
+    lv_obj_set_style_text_font(diagnostics_arrow, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(diagnostics_arrow, lv_color_hex(0x2684FF), 0);
     log_ui_memory("settings ready");
+}
+
+static void build_diagnostics_screen(void)
+{
+    stop_pattern();
+    lesson_selected = false;
+    stop_diagnostics_updates();
+    log_ui_memory("before diagnostics cleanup");
+    lv_obj_clean(ui_Screen1);
+    confirm_overlay = NULL;
+    timer_label = NULL;
+    page_default_focus = NULL;
+
+    lv_obj_t *brand_logo = lv_img_create(ui_Screen1);
+    lv_img_set_src(brand_logo, &ui_img_scopebuddy_logo);
+    lv_obj_set_pos(brand_logo, 25, 18);
+    make_label(ui_Screen1, "ScopeBuddy", 67, 29, &lv_font_montserrat_24, 0xF4FAFF);
+    make_label(ui_Screen1, "DIAGNOSE", 250, 32,
+               &lv_font_montserrat_14, 0x2684FF);
+
+    lv_obj_t *back_button = lv_btn_create(ui_Screen1);
+    lv_obj_set_pos(back_button, 727, 20);
+    lv_obj_set_size(back_button, 48, 42);
+    lv_obj_set_style_bg_color(back_button, lv_color_hex(0x14263A), 0);
+    lv_obj_set_style_radius(back_button, 8, 0);
+    lv_obj_set_style_border_color(back_button, lv_color_hex(0x2684FF), 0);
+    lv_obj_set_style_border_width(back_button, 1, 0);
+    lv_obj_remove_style(back_button, NULL, LV_STATE_FOCUSED | LV_STATE_FOCUS_KEY);
+    lv_obj_add_event_cb(back_button, diagnostics_back_event, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(back_button, encoder_input_touch_event, LV_EVENT_PRESSED, NULL);
+    lv_obj_t *settings_symbol = lv_label_create(back_button);
+    lv_label_set_text(settings_symbol, LV_SYMBOL_SETTINGS);
+    lv_obj_set_style_text_font(settings_symbol, &lv_font_montserrat_24, 0);
+    lv_obj_center(settings_symbol);
+    make_divider(ui_Screen1, 25, 92, 750);
+
+    lv_obj_t *software_card = lv_obj_create(ui_Screen1);
+    lv_obj_set_pos(software_card, 25, 108);
+    lv_obj_set_size(software_card, 350, 334);
+    lv_obj_clear_flag(software_card, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_radius(software_card, 10, 0);
+    lv_obj_set_style_bg_color(software_card, lv_color_hex(0x0D1927), 0);
+    lv_obj_set_style_border_color(software_card, lv_color_hex(0x26384B), 0);
+    lv_obj_set_style_border_width(software_card, 1, 0);
+    lv_obj_set_style_pad_all(software_card, 0, 0);
+    make_label(software_card, "SOFTWARE & HARDWARE", 20, 16,
+               &lv_font_montserrat_14, 0x2684FF);
+    make_divider(software_card, 20, 46, 310);
+
+    const esp_app_desc_t *app = esp_app_get_description();
+    lv_obj_t *software_keys = make_label(
+        software_card,
+        "Firmware:\nBuild:\nBuild-ID:\nESP-IDF:\nTarget:\nMesssignal:\nEncoder CLK:\nEncoder DT:\nEncoder Taster:",
+        20, 62, &lv_font_montserrat_14, 0x8FA5C2);
+    lv_obj_set_style_text_line_space(software_keys, 10, 0);
+    char software_text[256];
+    snprintf(software_text, sizeof(software_text),
+             "%s\n%s %s\n%s\n%s\n%s\nGPIO48 (%s)\nGPIO%d\nGPIO%d\nGPIO%d",
+             SCOPEBUDDY_FIRMWARE_VERSION, app->date, app->time, app->version,
+             app->idf_ver, CONFIG_IDF_TARGET, hardware_ready ? "bereit" : "nicht bereit",
+             ENCODER_GPIO_CLK, ENCODER_GPIO_DT, ENCODER_GPIO_SW);
+    lv_obj_t *software_values = make_label(software_card, software_text, 145, 62,
+                                            &lv_font_montserrat_14, 0xDCE8F7);
+    lv_obj_set_style_text_line_space(software_values, 10, 0);
+
+    lv_obj_t *status_card = lv_obj_create(ui_Screen1);
+    lv_obj_set_pos(status_card, 390, 108);
+    lv_obj_set_size(status_card, 385, 334);
+    lv_obj_clear_flag(status_card, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_radius(status_card, 10, 0);
+    lv_obj_set_style_bg_color(status_card, lv_color_hex(0x0D1927), 0);
+    lv_obj_set_style_border_color(status_card, lv_color_hex(0x26384B), 0);
+    lv_obj_set_style_border_width(status_card, 1, 0);
+    lv_obj_set_style_pad_all(status_card, 0, 0);
+    make_label(status_card, "LAUFZEIT & SPEICHER", 20, 16,
+               &lv_font_montserrat_14, 0x2684FF);
+    make_divider(status_card, 20, 46, 345);
+    lv_obj_t *status_keys = make_label(
+        status_card,
+        "Resetgrund:\nLaufzeit:\nHeap frei:\nHeap-Minimum:\nIntern frei:\nPSRAM frei:\nGrößter Block:\nLVGL frei:\nLVGL fragmentiert:\nUI-Stackreserve:",
+        20, 62, &lv_font_montserrat_14, 0x8FA5C2);
+    lv_obj_set_style_text_line_space(status_keys, 10, 0);
+    diagnostics_values_label = make_label(status_card, "", 165, 62,
+                                           &lv_font_montserrat_14, 0xDCE8F7);
+    lv_obj_set_style_text_line_space(diagnostics_values_label, 10, 0);
+    diagnostics_update(NULL);
+    diagnostics_timer = lv_timer_create(diagnostics_update, 1000, NULL);
+    if (!diagnostics_timer) ESP_LOGE(UI_TAG, "Creating diagnostics timer failed");
+
+    lv_group_t *encoder_group = lv_group_get_default();
+    if (encoder_group) lv_group_focus_obj(back_button);
+    log_ui_memory("diagnostics ready");
 }
 
 static void build_scope_reset_screen(void)
@@ -1010,9 +1229,9 @@ static void build_scope_reset_screen(void)
     make_label(ui_Screen1, "ScopeBuddy", 67, 29, &lv_font_montserrat_24, 0xF4FAFF);
 
     char heading[80];
-    snprintf(heading, sizeof(heading), "MESSAUFGABE %u / 3", question_number);
+    snprintf(heading, sizeof(heading), "STUFE %u / 3", question_number);
     make_label(ui_Screen1, heading, 250, 32, &lv_font_montserrat_14, 0x2684FF);
-    make_label(ui_Screen1, mode_name(), 630, 32,
+    make_label(ui_Screen1, mode_name(), 535, 32,
                &lv_font_montserrat_14, 0x8FA5C2);
 
     lv_obj_t *home_button = lv_btn_create(ui_Screen1);
@@ -1072,7 +1291,7 @@ static void build_question_screen(void)
     all_values_button = NULL;
     all_values_label = NULL;
     advance_button = NULL;
-    for (uint8_t i = 0; i < 5; ++i) {
+    for (uint8_t i = 0; i < SCOPEBUDDY_MAX_MEASUREMENTS; ++i) {
         measurement_values[i] = NULL;
         measurement_boxes[i] = NULL;
         measurement_marks[i] = NULL;
@@ -1081,7 +1300,7 @@ static void build_question_screen(void)
     }
     elapsed_seconds = 0;
     char heading[80];
-    snprintf(heading, sizeof(heading), "MESSAUFGABE %u / 3", question_number);
+    snprintf(heading, sizeof(heading), "STUFE %u / 3", question_number);
     lv_obj_t *home_button = lv_btn_create(ui_Screen1);
     lv_obj_set_pos(home_button, 727, 20);
     lv_obj_set_size(home_button, 48, 42);
@@ -1101,7 +1320,7 @@ static void build_question_screen(void)
     lv_obj_set_pos(brand_logo, 25, 18);
     make_label(ui_Screen1, "ScopeBuddy", 67, 29, &lv_font_montserrat_24, 0xF4FAFF);
     make_label(ui_Screen1, heading, 250, 32, &lv_font_montserrat_14, 0x2684FF);
-    make_label(ui_Screen1, mode_name(), setting_show_timer ? 545 : 630, 32,
+    make_label(ui_Screen1, mode_name(), setting_show_timer ? 470 : 570, 32,
                &lv_font_montserrat_14, 0x8FA5C2);
     if (setting_show_timer) {
         timer_label = make_label(ui_Screen1, "00:00", 630, 26,
@@ -1109,32 +1328,17 @@ static void build_question_screen(void)
     }
     make_divider(ui_Screen1, 25, 96, 750);
 
-    make_label(ui_Screen1, "BESTIMME FOLGENDE WERTE:", 28, 116,
+    lv_obj_t *context = make_label(ui_Screen1, challenge.context, 28, 106,
+                                   &lv_font_montserrat_14, 0x8FA5C2);
+    lv_obj_set_width(context, 740);
+    make_label(ui_Screen1, "BESTIMME FOLGENDE WERTE:", 28, 148,
                &lv_font_montserrat_14, 0xDCE8F7);
-    if (game_mode == GAME_EASY) {
-        make_measurement_item(ui_Screen1, "Frequenz", 151, 0);
-        make_measurement_item(ui_Screen1, "Tastgrad", 188, 1);
-        make_measurement_item(ui_Screen1, "Periodendauer", 225, 2);
-        make_measurement_item(ui_Screen1, "Spitze-Spitze-Spannung (Vpp)", 262, 3);
-        make_measurement_item(ui_Screen1, "DC-Mittelwert", 299, 4);
-    } else if (game_mode == GAME_MEDIUM) {
-        make_measurement_item(ui_Screen1, "Frequenz", 151, 0);
-        make_measurement_item(ui_Screen1, "Tastgrad", 188, 1);
-        make_measurement_item(ui_Screen1, "Pulse je Burst", 225, 2);
-        make_measurement_item(ui_Screen1, "Burstdauer (Flanke-Flanke)", 262, 3);
-        make_measurement_item(ui_Screen1, "Low-Pause zwischen Bursts", 299, 4);
-    } else {
-        make_measurement_item(ui_Screen1, "Frequenz A", 151, 0);
-        make_measurement_item(ui_Screen1, "Tastgrad A", 188, 1);
-        make_measurement_item(ui_Screen1, "Frequenz B", 225, 2);
-        make_measurement_item(ui_Screen1, "Tastgrad B", 262, 3);
-        make_measurement_item(ui_Screen1, "Zustandsdauer A/B", 299, 4);
+    for (uint8_t i = 0; i < challenge.measurement_count; ++i) {
+        make_measurement_item(ui_Screen1, challenge.measurements[i].label, 183 + i * 46, i);
     }
 
     make_divider(ui_Screen1, 25, 346, 750);
-    if (setting_reveal_values) {
-        for (uint8_t i = 0; i < 5; ++i) reveal_selected_value(i);
-    } else {
+    if (!setting_reveal_values) {
         all_values_button = make_button(ui_Screen1, "ALLE WERTE\nANZEIGEN", 25, 386, 235, 56,
                                         0x1455B8, solve_all_event, NULL);
         lv_obj_set_style_radius(all_values_button, 9, 0);
@@ -1173,10 +1377,12 @@ static void build_question_screen(void)
     log_ui_memory("question ready");
     if (hardware_ready) start_challenge_signal();
     else if (action_button) lv_obj_add_state(action_button, LV_STATE_DISABLED);
+    apply_direct_value_setting();
 }
 
 void GameUiBuildStart(void)
 {
+    load_settings();
     ensure_pattern_timer();
     if (!game_clock) {
         game_clock = lv_timer_create(clock_callback, 1000, NULL);
@@ -1188,7 +1394,7 @@ void GameUiBuildStart(void)
 void WaveHardwareReady(bool ready)
 {
     hardware_ready = ready;
-    if (game_mode == GAME_NONE && !splash_active) build_start_screen();
+    if (!lesson_selected && !splash_active) build_start_screen();
 }
 
 /* Compatibility hooks retained for the generated SquareLine wrapper. */

@@ -9,15 +9,15 @@
 #define WAVE_LEDC_CHANNEL      LEDC_CHANNEL_0
 #define WAVE_DUTY_RESOLUTION   LEDC_TIMER_10_BIT
 #define WAVE_DUTY_MAX          ((1U << 10) - 1U)
-#define BURST_RMT_RESOLUTION_HZ 1000000U
-#define BURST_RMT_SYMBOLS       48U
-#define BURST_RMT_MAX_DURATION  32767U
+#define SEQUENCE_RMT_RESOLUTION_HZ 1000000U
+#define SEQUENCE_RMT_SYMBOLS       48U
+#define SEQUENCE_RMT_MAX_DURATION  32767U
 
 static uint8_t wave_duty_percent = 50;
-static rmt_channel_handle_t burst_channel;
-static rmt_encoder_handle_t burst_encoder;
-static rmt_symbol_word_t burst_symbols[BURST_RMT_SYMBOLS];
-static bool burst_channel_enabled;
+static rmt_channel_handle_t sequence_channel;
+static rmt_encoder_handle_t sequence_encoder;
+static rmt_symbol_word_t sequence_symbols[SEQUENCE_RMT_SYMBOLS];
+static bool sequence_channel_enabled;
 
 esp_err_t gpio_extra_init()                    // Function to initialize GPIO48 as output
 {
@@ -104,6 +104,17 @@ esp_err_t gpio_wave_set_duty(uint8_t duty_percent)
     return ledc_update_duty(WAVE_LEDC_MODE, WAVE_LEDC_CHANNEL);
 }
 
+esp_err_t gpio_wave_get_effective(uint32_t *frequency_hz, uint8_t *duty_percent)
+{
+    if (frequency_hz == NULL || duty_percent == NULL) return ESP_ERR_INVALID_ARG;
+    uint32_t frequency = ledc_get_freq(WAVE_LEDC_MODE, WAVE_LEDC_TIMER);
+    if (frequency == 0) return ESP_ERR_INVALID_STATE;
+    uint32_t duty = ledc_get_duty(WAVE_LEDC_MODE, WAVE_LEDC_CHANNEL);
+    *frequency_hz = frequency;
+    *duty_percent = (uint8_t)((duty * 100U + WAVE_DUTY_MAX / 2U) / WAVE_DUTY_MAX);
+    return ESP_OK;
+}
+
 esp_err_t gpio_burst_get_timing_us(uint32_t frequency_hz, uint8_t duty_percent,
                                    uint32_t *period_us, uint32_t *high_time_us)
 {
@@ -113,7 +124,7 @@ esp_err_t gpio_burst_get_timing_us(uint32_t frequency_hz, uint8_t duty_percent,
         return ESP_ERR_INVALID_ARG;
     }
 
-    uint32_t period = (BURST_RMT_RESOLUTION_HZ + frequency_hz / 2U) / frequency_hz;
+    uint32_t period = (SEQUENCE_RMT_RESOLUTION_HZ + frequency_hz / 2U) / frequency_hz;
     uint32_t high_time = (period * duty_percent + 50U) / 100U;
     if (high_time == 0) high_time = 1;
     if (high_time >= period) high_time = period - 1U;
@@ -122,35 +133,102 @@ esp_err_t gpio_burst_get_timing_us(uint32_t frequency_hz, uint8_t duty_percent,
     return ESP_OK;
 }
 
-static esp_err_t ensure_burst_rmt(void)
+static esp_err_t ensure_sequence_rmt(void)
 {
-    if (burst_channel && burst_encoder) return ESP_OK;
+    if (sequence_channel && sequence_encoder) return ESP_OK;
 
     rmt_tx_channel_config_t channel_config = {
         .gpio_num = WAVE_GPIO,
         .clk_src = RMT_CLK_SRC_DEFAULT,
-        .resolution_hz = BURST_RMT_RESOLUTION_HZ,
-        .mem_block_symbols = BURST_RMT_SYMBOLS,
+        .resolution_hz = SEQUENCE_RMT_RESOLUTION_HZ,
+        .mem_block_symbols = SEQUENCE_RMT_SYMBOLS,
         .trans_queue_depth = 1,
     };
-    ESP_RETURN_ON_ERROR(rmt_new_tx_channel(&channel_config, &burst_channel),
-                        EXTRA_TAG, "Creating burst RMT channel failed");
+    ESP_RETURN_ON_ERROR(rmt_new_tx_channel(&channel_config, &sequence_channel),
+                        EXTRA_TAG, "Creating sequence RMT channel failed");
 
     const rmt_copy_encoder_config_t encoder_config;
-    esp_err_t err = rmt_new_copy_encoder(&encoder_config, &burst_encoder);
+    esp_err_t err = rmt_new_copy_encoder(&encoder_config, &sequence_encoder);
     if (err != ESP_OK) {
-        rmt_del_channel(burst_channel);
-        burst_channel = NULL;
+        rmt_del_channel(sequence_channel);
+        sequence_channel = NULL;
+    }
+    return err;
+}
+
+esp_err_t gpio_sequence_stop(void)
+{
+    if (!sequence_channel_enabled) return ESP_OK;
+    esp_err_t err = rmt_disable(sequence_channel);
+    if (err == ESP_OK) sequence_channel_enabled = false;
+    return err;
+}
+
+esp_err_t gpio_sequence_start(const gpio_wave_segment_t *segments,
+                              size_t segment_count, bool loop)
+{
+    if (segments == NULL || segment_count == 0) return ESP_ERR_INVALID_ARG;
+    ESP_RETURN_ON_ERROR(ensure_sequence_rmt(), EXTRA_TAG, "Initializing sequence RMT failed");
+    ESP_RETURN_ON_ERROR(gpio_sequence_stop(), EXTRA_TAG, "Stopping previous sequence failed");
+
+    bool phase_levels[SEQUENCE_RMT_SYMBOLS * 2U];
+    uint16_t phase_durations[SEQUENCE_RMT_SYMBOLS * 2U];
+    size_t phase_count = 0;
+    for (size_t segment = 0; segment < segment_count; ++segment) {
+        uint32_t remaining = segments[segment].duration_us;
+        if (remaining == 0) return ESP_ERR_INVALID_ARG;
+        while (remaining > 0) {
+            if (phase_count >= SEQUENCE_RMT_SYMBOLS * 2U) return ESP_ERR_INVALID_SIZE;
+            uint32_t duration = remaining > SEQUENCE_RMT_MAX_DURATION ?
+                                SEQUENCE_RMT_MAX_DURATION : remaining;
+            phase_levels[phase_count] = segments[segment].level;
+            phase_durations[phase_count] = (uint16_t)duration;
+            ++phase_count;
+            remaining -= duration;
+        }
+    }
+
+    if ((phase_count & 1U) != 0U) {
+        if (phase_count >= SEQUENCE_RMT_SYMBOLS * 2U || phase_durations[phase_count - 1U] < 2U) {
+            return ESP_ERR_INVALID_SIZE;
+        }
+        uint16_t original = phase_durations[phase_count - 1U];
+        phase_durations[phase_count - 1U] = original / 2U;
+        phase_levels[phase_count] = phase_levels[phase_count - 1U];
+        phase_durations[phase_count] = original - phase_durations[phase_count - 1U];
+        ++phase_count;
+    }
+
+    size_t symbol_count = phase_count / 2U;
+    for (size_t symbol = 0; symbol < symbol_count; ++symbol) {
+        sequence_symbols[symbol] = (rmt_symbol_word_t) {
+            .level0 = phase_levels[symbol * 2U],
+            .duration0 = phase_durations[symbol * 2U],
+            .level1 = phase_levels[symbol * 2U + 1U],
+            .duration1 = phase_durations[symbol * 2U + 1U],
+        };
+    }
+
+    ESP_RETURN_ON_ERROR(rmt_tx_switch_gpio(sequence_channel, WAVE_GPIO, false),
+                        EXTRA_TAG, "Routing sequence RMT output failed");
+    ESP_RETURN_ON_ERROR(rmt_enable(sequence_channel), EXTRA_TAG, "Enabling sequence RMT failed");
+    sequence_channel_enabled = true;
+    const rmt_transmit_config_t transmit_config = {
+        .loop_count = loop ? -1 : 0,
+        .flags.eot_level = 0,
+    };
+    esp_err_t err = rmt_transmit(sequence_channel, sequence_encoder, sequence_symbols,
+                                 symbol_count * sizeof(sequence_symbols[0]), &transmit_config);
+    if (err != ESP_OK) {
+        rmt_disable(sequence_channel);
+        sequence_channel_enabled = false;
     }
     return err;
 }
 
 esp_err_t gpio_burst_stop(void)
 {
-    if (!burst_channel_enabled) return ESP_OK;
-    esp_err_t err = rmt_disable(burst_channel);
-    if (err == ESP_OK) burst_channel_enabled = false;
-    return err;
+    return gpio_sequence_stop();
 }
 
 esp_err_t gpio_burst_start(uint32_t frequency_hz, uint8_t duty_percent,
@@ -165,76 +243,18 @@ esp_err_t gpio_burst_start(uint32_t frequency_hz, uint8_t duty_percent,
     ESP_RETURN_ON_ERROR(gpio_burst_get_timing_us(frequency_hz, duty_percent,
                                                  &period_us, &high_time_us),
                         EXTRA_TAG, "Calculating burst timing failed");
-    ESP_RETURN_ON_ERROR(ensure_burst_rmt(), EXTRA_TAG, "Initializing burst RMT failed");
-    ESP_RETURN_ON_ERROR(gpio_burst_stop(), EXTRA_TAG, "Stopping previous burst failed");
-
-    size_t symbol_count = 0;
+    gpio_wave_segment_t segments[32];
+    size_t segment_count = 0;
     uint32_t low_time_us = period_us - high_time_us;
-    for (uint8_t pulse = 1; pulse < pulse_count; ++pulse) {
-        burst_symbols[symbol_count++] = (rmt_symbol_word_t) {
-            .level0 = 1,
-            .duration0 = high_time_us,
-            .level1 = 0,
-            .duration1 = low_time_us,
-        };
-    }
-
-    /* Use an odd number of low segments. Together with the last HIGH phase
-     * this always fills complete RMT symbols while preserving the exact pause
-     * from the final falling edge to the next burst's first rising edge. */
-    uint32_t pause_us = (uint32_t)pause_ms * 1000U;
-    uint32_t pause_segments = (pause_us + BURST_RMT_MAX_DURATION - 1U) /
-                              BURST_RMT_MAX_DURATION;
-    if ((pause_segments & 1U) == 0U) ++pause_segments;
-    uint32_t pause_base = pause_us / pause_segments;
-    uint32_t pause_remainder = pause_us % pause_segments;
-    uint32_t pause_duration = pause_base;
-    if (pause_remainder > 0U) {
-        ++pause_duration;
-        --pause_remainder;
-    }
-    burst_symbols[symbol_count] = (rmt_symbol_word_t) {
-        .level0 = 1,
-        .duration0 = high_time_us,
-        .level1 = 0,
-        .duration1 = pause_duration,
-    };
-    ++symbol_count;
-
-    for (uint32_t segment = 1; segment < pause_segments; segment += 2U) {
-        uint32_t duration0 = pause_base;
-        uint32_t duration1 = pause_base;
-        if (pause_remainder > 0U) {
-            ++duration0;
-            --pause_remainder;
+    for (uint8_t pulse = 0; pulse < pulse_count; ++pulse) {
+        segments[segment_count++] = (gpio_wave_segment_t){ .level = true, .duration_us = high_time_us };
+        if (pulse + 1U < pulse_count) {
+            segments[segment_count++] = (gpio_wave_segment_t){ .level = false, .duration_us = low_time_us };
         }
-        if (pause_remainder > 0U) {
-            ++duration1;
-            --pause_remainder;
-        }
-        if (symbol_count >= BURST_RMT_SYMBOLS) return ESP_ERR_INVALID_SIZE;
-        burst_symbols[symbol_count++] = (rmt_symbol_word_t) {
-            .level0 = 0,
-            .duration0 = duration0,
-            .level1 = 0,
-            .duration1 = duration1,
-        };
     }
-
-    ESP_RETURN_ON_ERROR(rmt_tx_switch_gpio(burst_channel, WAVE_GPIO, false),
-                        EXTRA_TAG, "Routing burst RMT output failed");
-    ESP_RETURN_ON_ERROR(rmt_enable(burst_channel), EXTRA_TAG, "Enabling burst RMT failed");
-    burst_channel_enabled = true;
-
-    const rmt_transmit_config_t transmit_config = {
-        .loop_count = -1,
-        .flags.eot_level = 0,
+    segments[segment_count++] = (gpio_wave_segment_t) {
+        .level = false,
+        .duration_us = (uint32_t)pause_ms * 1000U,
     };
-    esp_err_t err = rmt_transmit(burst_channel, burst_encoder, burst_symbols,
-                                 symbol_count * sizeof(burst_symbols[0]), &transmit_config);
-    if (err != ESP_OK) {
-        rmt_disable(burst_channel);
-        burst_channel_enabled = false;
-    }
-    return err;
+    return gpio_sequence_start(segments, segment_count, true);
 }

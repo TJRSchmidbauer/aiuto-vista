@@ -213,7 +213,7 @@ esp_err_t encoder_input_init(void)
         lvgl_port_unlock();
         return ESP_ERR_NO_MEM;
     }
-    lv_indev_set_group(encoder_indev, encoder_group);
+    if (encoder_enabled) lv_indev_set_group(encoder_indev, encoder_group);
     lvgl_port_unlock();
 
     ESP_LOGI(ENCODER_TAG, "Ready: CLK=GPIO%d, DT=GPIO%d, SW=GPIO%d",
