@@ -18,6 +18,7 @@
 #define UI_TAG "SCOPEBUDDY_UI"
 #define SETTINGS_NAMESPACE "scopebuddy"
 #define SETTINGS_KEY "ui_flags"
+#define SETTINGS_CHANNELS_KEY "scope_channels"
 #define SETTING_FLAG_TIMER       (1U << 0)
 #define SETTING_FLAG_VALUES      (1U << 1)
 #define SETTING_FLAG_SCOPE_RESET (1U << 2)
@@ -73,8 +74,10 @@ static bool setting_show_timer = true;
 static bool setting_reveal_values;
 static bool setting_scope_reset = true;
 static bool setting_encoder_enabled = true;
+static uint8_t setting_scope_channels = 1;
 static bool settings_loaded;
 static bool splash_active;
+static lv_obj_t *scope_channels_toggle;
 
 static void mode_event(lv_event_t *event);
 static void page_event(lv_event_t *event);
@@ -115,17 +118,28 @@ static void load_settings(void)
     }
 
     uint8_t flags = 0;
-    err = nvs_get_u8(handle, SETTINGS_KEY, &flags);
-    nvs_close(handle);
-    if (err == ESP_OK) {
+    esp_err_t flags_err = nvs_get_u8(handle, SETTINGS_KEY, &flags);
+    if (flags_err == ESP_OK) {
         setting_show_timer = (flags & SETTING_FLAG_TIMER) != 0;
         setting_reveal_values = (flags & SETTING_FLAG_VALUES) != 0;
         setting_scope_reset = (flags & SETTING_FLAG_SCOPE_RESET) != 0;
         setting_encoder_enabled = (flags & SETTING_FLAG_ENCODER) != 0;
         ESP_LOGI(UI_TAG, "Loaded settings flags: 0x%02x", flags);
-    } else if (err != ESP_ERR_NVS_NOT_FOUND) {
-        log_operation_error("Reading stored settings", err);
+    } else if (flags_err != ESP_ERR_NVS_NOT_FOUND) {
+        log_operation_error("Reading stored settings", flags_err);
     }
+
+    uint8_t channels = 1;
+    esp_err_t channels_err = nvs_get_u8(handle, SETTINGS_CHANNELS_KEY, &channels);
+    if (channels_err == ESP_OK && (channels == 1 || channels == 2)) {
+        setting_scope_channels = channels;
+        ESP_LOGI(UI_TAG, "Loaded oscilloscope channels: %u", channels);
+    } else if (channels_err == ESP_OK) {
+        ESP_LOGW(UI_TAG, "Ignoring invalid oscilloscope channel count: %u", channels);
+    } else if (channels_err != ESP_OK && channels_err != ESP_ERR_NVS_NOT_FOUND) {
+        log_operation_error("Reading oscilloscope channels", channels_err);
+    }
+    nvs_close(handle);
     encoder_input_set_enabled(setting_encoder_enabled);
 }
 
@@ -134,6 +148,7 @@ static void save_settings(void)
     nvs_handle_t handle = 0;
     esp_err_t err = nvs_open(SETTINGS_NAMESPACE, NVS_READWRITE, &handle);
     if (err == ESP_OK) err = nvs_set_u8(handle, SETTINGS_KEY, settings_flags());
+    if (err == ESP_OK) err = nvs_set_u8(handle, SETTINGS_CHANNELS_KEY, setting_scope_channels);
     if (err == ESP_OK) err = nvs_commit(handle);
     if (handle) nvs_close(handle);
     log_operation_error("Saving settings", err);
@@ -371,6 +386,27 @@ static void start_scope_reset_signal(void)
     }
     xSemaphoreTake(pattern_mutex, portMAX_DELAY);
     stop_pattern_locked();
+
+    if (challenge.lesson && challenge.lesson->required_channels == 2) {
+        scope_signal_spec_t reset_signal = { .kind = SCOPE_SIGNAL_SEQUENCE_PAIR };
+        reset_signal.data.pair.loop = true;
+        reset_signal.data.pair.channels[0].segments[0] =
+            (scope_signal_segment_t){ .level = true, .duration_us = 500 };
+        reset_signal.data.pair.channels[0].segments[1] =
+            (scope_signal_segment_t){ .level = false, .duration_us = 500 };
+        reset_signal.data.pair.channels[0].segment_count = 2;
+        reset_signal.data.pair.channels[1].segments[0] =
+            (scope_signal_segment_t){ .level = false, .duration_us = 250 };
+        reset_signal.data.pair.channels[1].segments[1] =
+            (scope_signal_segment_t){ .level = true, .duration_us = 500 };
+        reset_signal.data.pair.channels[1].segments[2] =
+            (scope_signal_segment_t){ .level = false, .duration_us = 250 };
+        reset_signal.data.pair.channels[1].segment_count = 3;
+        esp_err_t pair_err = scopebuddy_output_start(&reset_signal);
+        log_operation_error("Starting two-channel oscilloscope reset output", pair_err);
+        xSemaphoreGive(pattern_mutex);
+        return;
+    }
 
     /* Use the safe extremes supported by the GPIO waveform driver. The choice
        is based on the signal state shown first in the upcoming challenge so
@@ -631,7 +667,30 @@ static void measurement_event(lv_event_t *event)
     update_solution_buttons();
 }
 
-static void make_measurement_item(lv_obj_t *parent, const char *text, int y, uint8_t index)
+static const char *measurement_source_name(scope_measurement_source_t source)
+{
+    switch (source) {
+    case SCOPE_MEASUREMENT_CHANNEL_1: return "CH1";
+    case SCOPE_MEASUREMENT_CHANNEL_2: return "CH2";
+    case SCOPE_MEASUREMENT_CHANNEL_PAIR: return "CH1/CH2";
+    case SCOPE_MEASUREMENT_DERIVED: return "BERECHNET";
+    default: return "";
+    }
+}
+
+static uint32_t measurement_source_color(scope_measurement_source_t source)
+{
+    switch (source) {
+    case SCOPE_MEASUREMENT_CHANNEL_1: return 0x2684FF;
+    case SCOPE_MEASUREMENT_CHANNEL_2: return 0xE6B43C;
+    case SCOPE_MEASUREMENT_CHANNEL_PAIR: return 0x18B8C9;
+    case SCOPE_MEASUREMENT_DERIVED: return 0x9A70E5;
+    default: return 0x607895;
+    }
+}
+
+static void make_measurement_item(lv_obj_t *parent, const scope_measurement_t *measurement,
+                                  int y, uint8_t index)
 {
     lv_obj_t *box = lv_obj_create(parent);
     lv_obj_set_pos(box, 25, y - 3);
@@ -650,13 +709,17 @@ static void make_measurement_item(lv_obj_t *parent, const char *text, int y, uin
     lv_obj_add_event_cb(box, encoder_input_touch_event, LV_EVENT_PRESSED, NULL);
     lv_group_t *encoder_group = lv_group_get_default();
     if (encoder_group) lv_group_add_obj(encoder_group, box);
-    make_label(parent, text, 70, y + 3, &lv_font_montserrat_14, 0xDCE8F7);
-    measurement_values[index] = make_label(parent, "---", 306, y + 3,
+    make_label(parent, measurement_source_name(measurement->source), 70, y + 3,
+               &lv_font_montserrat_14, measurement_source_color(measurement->source));
+    lv_obj_t *measurement_label = make_label(parent, measurement->label, 153, y + 3,
+                                              &lv_font_montserrat_14, 0xDCE8F7);
+    lv_obj_set_width(measurement_label, 205);
+    measurement_values[index] = make_label(parent, "---", 370, y + 3,
                                             &lv_font_montserrat_14, 0x607895);
 
     lv_obj_t *touch_area = lv_obj_create(parent);
     lv_obj_set_pos(touch_area, 18, y - 5);
-    lv_obj_set_size(touch_area, 370, 35);
+    lv_obj_set_size(touch_area, 500, 35);
     lv_obj_clear_flag(touch_area, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(touch_area, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_style_bg_opa(touch_area, LV_OPA_TRANSP, 0);
@@ -693,6 +756,7 @@ static void apply_direct_value_setting(void)
 
 static void make_mode_card(int x, const scope_lesson_definition_t *lesson)
 {
+    bool locked = lesson->required_channels > setting_scope_channels;
     lv_obj_t *card = lv_obj_create(ui_Screen1);
     lv_obj_set_pos(card, x, 122);
     lv_obj_set_size(card, 230, 278);
@@ -702,24 +766,37 @@ static void make_mode_card(int x, const scope_lesson_definition_t *lesson)
     lv_obj_set_style_border_width(card, 1, 0);
     lv_obj_set_style_pad_all(card, 0, 0);
 
-    lv_obj_set_style_border_color(card, lv_color_hex(lesson->accent), 0);
+    lv_obj_set_style_border_color(card, lv_color_hex(locked ? 0x34465A : lesson->accent), 0);
     lv_obj_t *title = make_label(card, lesson->title, 18, 20,
-                                 &lv_font_montserrat_24, lesson->accent);
+                                 &lv_font_montserrat_24, locked ? 0x607895 : lesson->accent);
     lv_obj_set_width(title, 198);
     lv_obj_set_style_text_font(title, &scopebuddy_font_14, 0);
     make_label(card, lesson->category, 18, 58, &lv_font_montserrat_14, 0xDCE8F7);
+    char channel_badge[8];
+    snprintf(channel_badge, sizeof(channel_badge), "%u CH", lesson->required_channels);
+    make_label(card, channel_badge, 168, 58, &lv_font_montserrat_14,
+               lesson->required_channels == 2 ? 0x18B8C9 : 0x607895);
     lv_obj_t *description = make_label(card, lesson->summary, 18, 98,
                                        &lv_font_montserrat_14, 0x8FA5C2);
     lv_obj_set_width(description, 194);
     lv_obj_set_style_text_line_space(description, 6, 0);
-    make_label(card, "3 STUFEN", 18, 190, &lv_font_montserrat_14, 0x607895);
-    make_button(card, "STARTEN", 18, 222, 194, 42, lesson->accent,
-                mode_event, (void *)(uintptr_t)lesson->id);
+    lv_obj_t *status = make_label(card,
+                                  locked ? "2 CH IN EINSTELLUNGEN AKTIVIEREN" : "3 STUFEN",
+                                  18, locked ? 176 : 190,
+                                  &lv_font_montserrat_14, locked ? 0xE6B43C : 0x607895);
+    lv_obj_set_width(status, 194);
+    lv_obj_t *start_button = make_button(card, locked ? "2 CH NÖTIG" : "STARTEN",
+                                         18, 222, 194, 42,
+                                         locked ? 0x26384B : lesson->accent,
+                                         mode_event, (void *)(uintptr_t)lesson->id);
+    if (locked) lv_obj_add_state(start_button, LV_STATE_DISABLED);
 }
 
 static void mode_event(lv_event_t *event)
 {
     selected_lesson = (scope_lesson_id_t)(uintptr_t)lv_event_get_user_data(event);
+    const scope_lesson_definition_t *lesson = scopebuddy_lesson_at(selected_lesson);
+    if (lesson == NULL || lesson->required_channels > setting_scope_channels) return;
     lesson_selected = true;
     question_number = 1;
     queue_ui_action(prepare_question_async, "prepare question");
@@ -872,6 +949,72 @@ static void home_event(lv_event_t *event)
     }
 }
 
+static void scope_channels_confirm_event(lv_event_t *event)
+{
+    bool enable_two_channels = (bool)(uintptr_t)lv_event_get_user_data(event);
+    close_confirm_encoder_group();
+    setting_scope_channels = enable_two_channels ? 2U : 1U;
+    if (scope_channels_toggle && lv_obj_is_valid(scope_channels_toggle)) {
+        if (enable_two_channels) lv_obj_add_state(scope_channels_toggle, LV_STATE_CHECKED);
+        else lv_obj_clear_state(scope_channels_toggle, LV_STATE_CHECKED);
+    }
+    save_settings();
+    lv_obj_del_async(confirm_overlay);
+    confirm_overlay = NULL;
+}
+
+static void show_scope_channels_confirmation(void)
+{
+    if (confirm_overlay) return;
+    confirm_background_group = lv_group_get_default();
+    if (confirm_background_group) {
+        confirm_group = lv_group_create();
+        if (confirm_group) lv_group_set_default(confirm_group);
+    }
+
+    confirm_overlay = lv_obj_create(ui_Screen1);
+    lv_obj_set_pos(confirm_overlay, 0, 0);
+    lv_obj_set_size(confirm_overlay, 800, 480);
+    lv_obj_clear_flag(confirm_overlay, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_radius(confirm_overlay, 0, 0);
+    lv_obj_set_style_bg_color(confirm_overlay, lv_color_hex(0x02060B), 0);
+    lv_obj_set_style_bg_opa(confirm_overlay, LV_OPA_80, 0);
+    lv_obj_set_style_border_width(confirm_overlay, 0, 0);
+    lv_obj_set_style_pad_all(confirm_overlay, 0, 0);
+
+    lv_obj_t *dialog = lv_obj_create(confirm_overlay);
+    lv_obj_set_pos(dialog, 90, 87);
+    lv_obj_set_size(dialog, 620, 306);
+    lv_obj_clear_flag(dialog, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_radius(dialog, 12, 0);
+    lv_obj_set_style_bg_color(dialog, lv_color_hex(0x0D1927), 0);
+    lv_obj_set_style_border_color(dialog, lv_color_hex(0x18B8C9), 0);
+    lv_obj_set_style_border_width(dialog, 2, 0);
+    lv_obj_set_style_pad_all(dialog, 0, 0);
+
+    make_label(dialog, "Zwei Kanäle aktivieren?", 28, 24,
+               &lv_font_montserrat_24, 0xF4FAFF);
+    lv_obj_t *description = make_label(
+        dialog,
+        "Verbinde CH1 mit GPIO48 und CH2 mit GPIO47.\n"
+        "Beide Tastkopf-Massen müssen am selben GND liegen.\n"
+        "Die Ausgänge dürfen nur hochohmig gemessen werden.",
+        28, 76, &lv_font_montserrat_14, 0xAFC2DC);
+    lv_obj_set_style_text_line_space(description, 7, 0);
+    make_divider(dialog, 28, 183, 564);
+    lv_obj_t *cancel_button = make_button(
+        dialog, "ABBRECHEN", 28, 214, 260, 62, 0x26384B,
+        scope_channels_confirm_event, (void *)(uintptr_t)false);
+    make_button(dialog, "2 KANÄLE AKTIVIEREN", 322, 214, 270, 62, 0x16899A,
+                scope_channels_confirm_event, (void *)(uintptr_t)true);
+
+    if (confirm_group) {
+        lv_group_set_default(confirm_background_group);
+        encoder_input_activate_group(confirm_group);
+        lv_group_focus_obj(cancel_button);
+    }
+}
+
 static void settings_event(lv_event_t *event)
 {
     (void)event;
@@ -948,6 +1091,18 @@ static void timer_setting_event(lv_event_t *event)
     save_settings();
 }
 
+static void scope_channels_setting_event(lv_event_t *event)
+{
+    lv_obj_t *toggle = lv_event_get_target(event);
+    if (!lv_obj_has_state(toggle, LV_STATE_CHECKED)) {
+        setting_scope_channels = 1;
+        save_settings();
+        return;
+    }
+    if (setting_scope_channels == 2) return;
+    show_scope_channels_confirmation();
+}
+
 static void values_setting_event(lv_event_t *event)
 {
     lv_obj_t *toggle = lv_event_get_target(event);
@@ -970,12 +1125,12 @@ static void encoder_setting_event(lv_event_t *event)
     save_settings();
 }
 
-static void make_setting_row(const char *title, const char *description, int y,
-                             bool enabled, lv_event_cb_t callback)
+static lv_obj_t *make_setting_row(const char *title, const char *description, int y,
+                                  bool enabled, lv_event_cb_t callback)
 {
     lv_obj_t *card = lv_obj_create(ui_Screen1);
     lv_obj_set_pos(card, 25, y);
-    lv_obj_set_size(card, 750, 66);
+    lv_obj_set_size(card, 750, 54);
     lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_style_radius(card, 10, 0);
     lv_obj_set_style_bg_color(card, lv_color_hex(0x0D1927), 0);
@@ -983,11 +1138,11 @@ static void make_setting_row(const char *title, const char *description, int y,
     lv_obj_set_style_border_width(card, 1, 0);
     lv_obj_set_style_pad_all(card, 0, 0);
 
-    make_label(card, title, 22, 8, &lv_font_montserrat_14, 0xDCE8F7);
-    make_label(card, description, 22, 34, &lv_font_montserrat_14, 0x8FA5C2);
+    make_label(card, title, 22, 5, &lv_font_montserrat_14, 0xDCE8F7);
+    make_label(card, description, 22, 28, &lv_font_montserrat_14, 0x8FA5C2);
 
     lv_obj_t *toggle = lv_switch_create(card);
-    lv_obj_set_pos(toggle, 664, 16);
+    lv_obj_set_pos(toggle, 664, 10);
     lv_obj_set_size(toggle, 60, 34);
     lv_obj_set_style_bg_color(toggle, lv_color_hex(0x26384B), LV_PART_MAIN);
     lv_obj_set_style_bg_color(toggle, lv_color_hex(0x1455B8),
@@ -996,6 +1151,7 @@ static void make_setting_row(const char *title, const char *description, int y,
     if (enabled) lv_obj_add_state(toggle, LV_STATE_CHECKED);
     lv_obj_add_event_cb(toggle, callback, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_event_cb(toggle, encoder_input_touch_event, LV_EVENT_PRESSED, NULL);
+    return toggle;
 }
 
 static void stop_diagnostics_updates(void)
@@ -1061,6 +1217,7 @@ static void build_start_screen(void)
     confirm_overlay = NULL;
     timer_label = NULL;
     page_default_focus = NULL;
+    scope_channels_toggle = NULL;
     lv_obj_t *brand_title = make_label(ui_Screen1, "ScopeBuddy", 67, 29,
                                        &lv_font_montserrat_24, 0xF4FAFF);
 
@@ -1077,8 +1234,12 @@ static void build_start_screen(void)
         const scope_lesson_definition_t *lesson = scopebuddy_lesson_at(first_lesson + card);
         if (lesson) make_mode_card(25 + (int)card * 260, lesson);
     }
-    make_label(ui_Screen1, "Das Messsignal wird an GPIO48 ausgegeben.",
-               25, 438, &lv_font_montserrat_14, 0x2684FF);
+    lv_obj_t *output_hint = make_label(
+        ui_Screen1,
+        setting_scope_channels == 2 ? "CH1: GPIO48 | CH2: GPIO47 | gemeinsame Masse" :
+                                      "CH1: GPIO48 | Zweikanal-Lektionen gesperrt",
+        25, 438, &lv_font_montserrat_14, 0x2684FF);
+    lv_obj_set_width(output_hint, 535);
     char page_text[16];
     snprintf(page_text, sizeof(page_text), "%u / %u", lesson_page + 1U,
              (unsigned)page_count);
@@ -1146,18 +1307,22 @@ static void build_settings_screen(void)
 
     make_divider(ui_Screen1, 25, 92, 750);
 
+    scope_channels_toggle = make_setting_row(
+                     "OSZILLOSKOP MIT 2 KANÄLEN",
+                     "Schaltet Zweikanal-Lektionen für GPIO48 und GPIO47 frei.",
+                     101, setting_scope_channels == 2, scope_channels_setting_event);
     make_setting_row("TIMER EINBLENDEN",
                      "Zeigt die verstrichene Zeit auf den Messaufgabenseiten.",
-                     101, setting_show_timer, timer_setting_event);
+                     159, setting_show_timer, timer_setting_event);
     make_setting_row("WERTE DIREKT ANZEIGEN",
                      "Zeigt alle Lösungswerte sofort und entfernt die Lösungsbuttons.",
-                     173, setting_reveal_values, values_setting_event);
+                     217, setting_reveal_values, values_setting_event);
     make_setting_row("AUTO-VORBEREITUNG",
                      "Gibt vor jeder Messaufgabe ein Referenzsignal für AUTO aus.",
-                     245, setting_scope_reset, scope_reset_setting_event);
+                     275, setting_scope_reset, scope_reset_setting_event);
     make_setting_row("ENCODER AKTIVIEREN",
                      "Aktiviert Drehsteuerung und weiße Auswahlkontur.",
-                     317, setting_encoder_enabled, encoder_setting_event);
+                     333, setting_encoder_enabled, encoder_setting_event);
 
     lv_obj_t *diagnostics_button = lv_btn_create(ui_Screen1);
     lv_obj_set_pos(diagnostics_button, 25, 397);
@@ -1378,9 +1543,13 @@ static void build_scope_reset_screen(void)
 
     make_label(card, "AUTO-VORBEREITUNG", 32, 28,
                &lv_font_montserrat_24, 0xF4FAFF);
+    const char *auto_instruction = challenge.lesson && challenge.lesson->required_channels == 2 ?
+        "Aktiviere CH1 und CH2 mit gleicher Skalierung, triggere auf CH1\n"
+        "und drücke dann AUTO am Oszilloskop." :
+        "Drücke jetzt den AUTO-Button am Oszilloskop,\n"
+        "um die Ansicht für die Messung vorzubereiten.";
     lv_obj_t *instruction = make_label(
-        card,
-        "Drücke jetzt den AUTO-Button am Oszilloskop,\num die Ansicht für die Messung vorzubereiten.",
+        card, auto_instruction,
         32, 88, &lv_font_montserrat_14, 0xAFC2DC);
     lv_obj_set_style_text_line_space(instruction, 8, 0);
 
@@ -1444,13 +1613,19 @@ static void build_question_screen(void)
     }
     make_divider(ui_Screen1, 25, 96, 750);
 
-    lv_obj_t *context = make_label(ui_Screen1, challenge.context, 28, 106,
+    lv_obj_t *context = make_label(ui_Screen1, challenge.context, 28, 103,
                                    &lv_font_montserrat_14, 0x8FA5C2);
     lv_obj_set_width(context, 740);
-    make_label(ui_Screen1, "BESTIMME FOLGENDE WERTE:", 28, 148,
+    lv_obj_t *connection = make_label(ui_Screen1, challenge.lesson->connection_hint, 28, 128,
+                                      &lv_font_montserrat_14, 0x18B8C9);
+    lv_obj_set_width(connection, 740);
+    lv_obj_t *trigger = make_label(ui_Screen1, challenge.lesson->trigger_hint, 28, 151,
+                                   &lv_font_montserrat_14, 0xE6B43C);
+    lv_obj_set_width(trigger, 740);
+    make_label(ui_Screen1, "BESTIMME FOLGENDE WERTE:", 28, 176,
                &lv_font_montserrat_14, 0xDCE8F7);
     for (uint8_t i = 0; i < challenge.measurement_count; ++i) {
-        make_measurement_item(ui_Screen1, challenge.measurements[i].label, 183 + i * 46, i);
+        make_measurement_item(ui_Screen1, &challenge.measurements[i], 207 + i * 42, i);
     }
 
     make_divider(ui_Screen1, 25, 346, 750);

@@ -44,6 +44,12 @@ GPIO47 and GPIO48 are 3.3 V logic outputs intended for high-impedance
 oscilloscope or logic-analyzer inputs. Do not connect loads or external
 voltages to them.
 
+The oscilloscope channel count defaults to one. Enable **2-channel
+oscilloscope** in the settings only after connecting CH1 to GPIO48, CH2 to
+GPIO47, and both probe grounds to the same board GND. The choice is stored in
+NVS. Two-channel lessons remain visible but locked while one-channel mode is
+selected.
+
 ## Build
 
 Install ESP-IDF 5.4 or newer, activate its environment, and run:
