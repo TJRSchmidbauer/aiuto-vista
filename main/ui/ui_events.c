@@ -2,6 +2,7 @@
 #include "bsp_extra.h"
 #include "encoder_input.h"
 #include "scopebuddy_lessons.h"
+#include "scopebuddy_output.h"
 #include "esp_timer.h"
 #include "esp_log.h"
 #include "esp_system.h"
@@ -21,6 +22,7 @@
 #define SETTING_FLAG_VALUES      (1U << 1)
 #define SETTING_FLAG_SCOPE_RESET (1U << 2)
 #define SETTING_FLAG_ENCODER     (1U << 3)
+#define LESSONS_PER_PAGE         3U
 
 LV_FONT_DECLARE(scopebuddy_font_14);
 LV_FONT_DECLARE(scopebuddy_font_24);
@@ -38,6 +40,11 @@ static SemaphoreHandle_t pattern_mutex;
 static bool pattern_enabled;
 static uint32_t recent_signatures[18];
 static uint8_t recent_count;
+
+static size_t lesson_page_count(void)
+{
+    return (scopebuddy_lesson_count() + LESSONS_PER_PAGE - 1U) / LESSONS_PER_PAGE;
+}
 
 static lv_obj_t *action_button;
 static lv_obj_t *action_label;
@@ -222,14 +229,13 @@ static void stop_pattern_locked(void)
             log_operation_error("Stopping signal timer", err);
         }
     }
-    log_operation_error("Stopping sequence output", gpio_sequence_stop());
-    log_operation_error("Stopping GPIO48 output", gpio_wave_stop());
+    log_operation_error("Stopping challenge output", scopebuddy_output_stop());
 }
 
 static void stop_pattern(void)
 {
     if (pattern_mutex == NULL) {
-        log_operation_error("Stopping GPIO48 output", gpio_wave_stop());
+        log_operation_error("Stopping challenge output", scopebuddy_output_stop());
         return;
     }
     xSemaphoreTake(pattern_mutex, portMAX_DELAY);
@@ -323,17 +329,7 @@ static void start_challenge_signal(void)
     xSemaphoreTake(pattern_mutex, portMAX_DELAY);
     stop_pattern_locked();
 
-    esp_err_t err;
-    if (challenge.signal.kind == SCOPE_SIGNAL_SEQUENCE) {
-        const scope_sequence_spec_t *sequence = &challenge.signal.data.sequence;
-        err = gpio_sequence_start(sequence->segments, sequence->segment_count, sequence->loop);
-    } else {
-        const scope_pwm_spec_t *state_a = challenge.signal.kind == SCOPE_SIGNAL_PWM ?
-            &challenge.signal.data.pwm : &challenge.signal.data.alternating.state_a;
-        err = gpio_wave_set_frequency(state_a->frequency_hz);
-        if (err == ESP_OK) err = gpio_wave_set_duty(state_a->duty_percent);
-        if (err == ESP_OK) err = gpio_wave_start();
-    }
+    esp_err_t err = scopebuddy_output_start(&challenge.signal);
     if (err != ESP_OK) {
         log_operation_error("Starting challenge output", err);
         xSemaphoreGive(pattern_mutex);
@@ -379,9 +375,9 @@ static void start_scope_reset_signal(void)
     /* Use the safe extremes supported by the GPIO waveform driver. The choice
        is based on the signal state shown first in the upcoming challenge so
        AUTO leaves the horizontal timebase as far away from it as possible. */
-    uint32_t challenge_frequency = challenge.actual_frequency_a_hz;
-    if (challenge_frequency == 0 && challenge.period_us > 0) {
-        challenge_frequency = 1000000U / challenge.period_us;
+    uint32_t challenge_frequency = challenge.realized[0].frequency_hz;
+    if (challenge_frequency == 0 && challenge.realized[0].period_us > 0) {
+        challenge_frequency = 1000000U / challenge.realized[0].period_us;
     }
     uint32_t reset_frequency = (challenge_frequency < 448U) ? 20000U : 10U;
     esp_err_t err = gpio_wave_set_frequency(reset_frequency);
@@ -732,8 +728,9 @@ static void mode_event(lv_event_t *event)
 static void page_event(lv_event_t *event)
 {
     intptr_t direction = (intptr_t)lv_event_get_user_data(event);
+    size_t page_count = lesson_page_count();
     if (direction < 0 && lesson_page > 0) --lesson_page;
-    if (direction > 0 && lesson_page < 2) ++lesson_page;
+    if (direction > 0 && (size_t)lesson_page + 1U < page_count) ++lesson_page;
     queue_ui_action(build_start_async, "lesson page");
 }
 
@@ -1073,15 +1070,18 @@ static void build_start_screen(void)
     (void)brand_title;
     make_divider(ui_Screen1, 25, 92, 750);
 
-    size_t first_lesson = (size_t)lesson_page * 3U;
-    for (size_t card = 0; card < 3; ++card) {
+    size_t page_count = lesson_page_count();
+    if ((size_t)lesson_page >= page_count) lesson_page = 0;
+    size_t first_lesson = (size_t)lesson_page * LESSONS_PER_PAGE;
+    for (size_t card = 0; card < LESSONS_PER_PAGE; ++card) {
         const scope_lesson_definition_t *lesson = scopebuddy_lesson_at(first_lesson + card);
         if (lesson) make_mode_card(25 + (int)card * 260, lesson);
     }
     make_label(ui_Screen1, "Das Messsignal wird an GPIO48 ausgegeben.",
                25, 438, &lv_font_montserrat_14, 0x2684FF);
     char page_text[16];
-    snprintf(page_text, sizeof(page_text), "%u / 3", lesson_page + 1U);
+    snprintf(page_text, sizeof(page_text), "%u / %u", lesson_page + 1U,
+             (unsigned)page_count);
     lv_obj_t *page_indicator = make_label(ui_Screen1, page_text, 635, 438,
                                           &lv_font_montserrat_14, 0x8FA5C2);
     lv_obj_set_width(page_indicator, 80);
@@ -1093,7 +1093,7 @@ static void build_start_screen(void)
     lv_obj_set_style_text_font(lv_obj_get_child(previous, 0), &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_font(lv_obj_get_child(next, 0), &lv_font_montserrat_24, 0);
     if (lesson_page == 0) lv_obj_add_state(previous, LV_STATE_DISABLED);
-    if (lesson_page == 2) lv_obj_add_state(next, LV_STATE_DISABLED);
+    if ((size_t)lesson_page + 1U >= page_count) lv_obj_add_state(next, LV_STATE_DISABLED);
 
     lv_obj_t *settings_button = lv_btn_create(ui_Screen1);
     lv_obj_set_pos(settings_button, 727, 20);
