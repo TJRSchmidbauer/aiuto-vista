@@ -24,12 +24,12 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Build ScopeBuddy
-        run: /opt/esp/idf/tools/idf.py build
+        run: /opt/esp/entrypoint.sh idf.py build
 
       - name: Create browser-installable firmware
         run: |
           mkdir -p docs/firmware
-          /opt/esp/idf/tools/idf.py merge-bin -o "$GITHUB_WORKSPACE/docs/firmware/scopebuddy-v0.5.bin" -f raw
+          /opt/esp/entrypoint.sh idf.py merge-bin -o "$GITHUB_WORKSPACE/docs/firmware/scopebuddy-v0.5.bin" -f raw
           sha256sum docs/firmware/scopebuddy-v0.5.bin > docs/firmware/scopebuddy-v0.5.bin.sha256
 
       - name: Configure GitHub Pages
