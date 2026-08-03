@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 139" role="img" aria-labelledby="title">
+  <title id="title">ScopeBuddy Logo</title>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M40 19V4M17 27 7 17M63 27 73 17" stroke="#2684ff" stroke-width="8"/>
+    <path d="M40 27c-18 0-32 14-32 32 0 12 6 21 14 29 4 4 5 8 5 13h26c0-5 1-9 5-13 8-8 14-17 14-29 0-18-14-32-32-32Z" stroke="#f4faff" stroke-width="6"/>
+    <path d="M9 65h15c5 0 6-21 13-21 8 0 8 39 16 39 7 0 8-25 17-25" stroke="#2684ff" stroke-width="7"/>
+    <path d="M25 104h30M27 114h26M30 124h20M34 133h12" stroke="#f4faff" stroke-width="6"/>
+  </g>
+</svg>

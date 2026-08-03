@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="dark">
-    <meta name="theme-color" content="#07121e">
+    <meta name="theme-color" content="#07111c">
     <title>ScopeBuddy installieren</title>
     <meta
       name="description"
@@ -18,33 +18,74 @@
     ></script>
   </head>
   <body>
+    <div class="scope-grid" aria-hidden="true"></div>
+
+    <header class="site-header">
+      <a class="brand" href="./" aria-label="ScopeBuddy Startseite">
+        <img src="scopebuddy-logo.svg" alt="" width="38" height="66">
+        <span>ScopeBuddy</span>
+      </a>
+      <a class="github-link" href="https://github.com/johannesboernsen/ScopeBuddy">
+        GitHub
+        <span aria-hidden="true">↗</span>
+      </a>
+    </header>
+
     <main>
-      <header class="hero">
-        <a class="eyebrow" href="https://github.com/johannesboernsen/ScopeBuddy">
-          ScopeBuddy auf GitHub
-        </a>
-        <h1>ScopeBuddy installieren</h1>
-        <p class="intro">
-          Übertrage ScopeBuddy 0.5 direkt aus dem Browser auf dein
-          Elecrow CrowPanel Advanced 5″ mit ESP32-P4.
-        </p>
-      </header>
+      <section class="hero" aria-labelledby="page-title">
+        <div class="hero-copy">
+          <p class="kicker">Web Installer</p>
+          <h1 id="page-title">ScopeBuddy<br><span>installieren</span></h1>
+          <p class="intro">
+            ScopeBuddy 0.5 direkt aus dem Browser auf dein Elecrow
+            CrowPanel Advanced 5″ mit ESP32-P4 übertragen.
+          </p>
+        </div>
+
+        <div class="signal-card" aria-hidden="true">
+          <div class="signal-card-head">
+            <span>CH1</span>
+            <span>1.00 kHz</span>
+          </div>
+          <svg viewBox="0 0 520 172" role="presentation">
+            <path class="signal-grid-line" d="M0 43H520M0 86H520M0 129H520M65 0V172M130 0V172M195 0V172M260 0V172M325 0V172M390 0V172M455 0V172"/>
+            <path class="signal-wave" d="M0 91H52C67 91 69 32 86 32s18 108 36 108 20-92 38-92 21 72 39 72 21-43 40-43 22 17 41 17h44c18 0 22-61 40-61s19 107 38 107 19-91 38-91 21 71 39 71 22-42 40-42 21 16 41 16h20"/>
+          </svg>
+          <span class="signal-label">USB · SERIAL FLASH</span>
+        </div>
+      </section>
 
       <section class="installer" aria-labelledby="install-heading">
-        <div class="version-row">
-          <span class="status-dot" aria-hidden="true"></span>
-          <span>Stabile Version 0.5</span>
+        <div class="panel-heading">
+          <div>
+            <p class="panel-label">Firmware</p>
+            <h2 id="install-heading">Bereit zur Installation</h2>
+          </div>
+          <div class="version-badge">
+            <span class="status-dot" aria-hidden="true"></span>
+            Version 0.5
+          </div>
         </div>
-        <h2 id="install-heading">Bereit zur Installation</h2>
-        <ol>
-          <li>CrowPanel mit einem USB-Datenkabel an den Computer anschließen.</li>
-          <li>Auf „Mit Gerät verbinden“ klicken und den seriellen Anschluss auswählen.</li>
-          <li>Die Installation bestätigen und das Kabel nicht abziehen.</li>
+
+        <ol class="steps">
+          <li>
+            <span class="step-number" aria-hidden="true">01</span>
+            <span><strong>Verbinden</strong>CrowPanel mit einem USB-Datenkabel anschließen.</span>
+          </li>
+          <li>
+            <span class="step-number" aria-hidden="true">02</span>
+            <span><strong>Auswählen</strong>Auf „Mit Gerät verbinden“ klicken und den seriellen Anschluss wählen.</span>
+          </li>
+          <li>
+            <span class="step-number" aria-hidden="true">03</span>
+            <span><strong>Installieren</strong>Installation bestätigen und das Kabel nicht abziehen.</span>
+          </li>
         </ol>
 
         <esp-web-install-button manifest="manifest.json">
           <button class="install-button" slot="activate" type="button">
-            Mit Gerät verbinden
+            <span>Mit Gerät verbinden</span>
+            <span aria-hidden="true">→</span>
           </button>
           <p class="compatibility" slot="unsupported">
             Dieser Browser unterstützt die Installation nicht. Bitte verwende
@@ -56,26 +97,33 @@
         </esp-web-install-button>
 
         <p class="warning">
-          Achtung: Nur für das Elecrow CrowPanel Advanced 5″ mit ESP32-P4.
-          Die Browser-Installation setzt gespeicherte ScopeBuddy-Einstellungen
-          zurück. „Gerät löschen“ entfernt zusätzlich alle übrigen Flash-Daten.
+          <span aria-hidden="true">!</span>
+          <span>
+            <strong>Nur für das CrowPanel Advanced 5″ mit ESP32-P4.</strong>
+            Die Installation setzt gespeicherte ScopeBuddy-Einstellungen zurück.
+            „Gerät löschen“ entfernt zusätzlich alle übrigen Flash-Daten.
+          </span>
         </p>
       </section>
 
       <section class="details" aria-labelledby="help-heading">
-        <h2 id="help-heading">Wenn keine Verbindung zustande kommt</h2>
-        <p>
-          Schließe andere Programme mit serieller Verbindung, probiere ein anderes
-          USB-Datenkabel und lade diese Seite neu. Falls das Board nicht automatisch
-          in den Download-Modus wechselt, halte die BOOT-Taste gedrückt, betätige
-          kurz RESET und lasse anschließend BOOT los.
-        </p>
+        <div class="help-mark" aria-hidden="true">?</div>
+        <div>
+          <p class="panel-label">Verbindungsprobleme</p>
+          <h2 id="help-heading">Keine Verbindung?</h2>
+          <p>
+            Schließe andere Programme mit serieller Verbindung, probiere ein
+            anderes USB-Datenkabel und lade diese Seite neu. Falls das Board nicht
+            automatisch in den Download-Modus wechselt, halte BOOT gedrückt,
+            betätige kurz RESET und lasse anschließend BOOT los.
+          </p>
+        </div>
       </section>
     </main>
 
     <footer>
       <span>ScopeBuddy · Oszilloskop-Training mit echten Messsignalen</span>
-      <a href="https://github.com/johannesboernsen/ScopeBuddy/issues">Problem melden</a>
+      <a href="https://github.com/johannesboernsen/ScopeBuddy/issues">Problem melden ↗</a>
     </footer>
   </body>
 </html>
