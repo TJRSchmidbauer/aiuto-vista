@@ -67,22 +67,41 @@
           </div>
         </div>
 
+        <div class="boot-mode" role="note" aria-labelledby="boot-mode-heading">
+          <div>
+            <p class="boot-mode-label">Vor dem Verbinden erforderlich</p>
+            <h3 id="boot-mode-heading">CrowPanel in den Download-Modus versetzen</h3>
+            <p>Ohne diese Tastenkombination wird der ESP32-P4 nicht im Browser angezeigt.</p>
+          </div>
+          <div class="button-sequence" aria-label="BOOT gedrückt halten, RST kurz drücken, BOOT loslassen">
+            <span><kbd>BOOT</kbd><small>halten</small></span>
+            <b aria-hidden="true">→</b>
+            <span><kbd>RST</kbd><small>kurz drücken</small></span>
+            <b aria-hidden="true">→</b>
+            <span><kbd>BOOT</kbd><small>loslassen</small></span>
+          </div>
+        </div>
+
         <ol class="steps">
           <li>
             <span class="step-number" aria-hidden="true">01</span>
-            <span><strong>Verbinden</strong>CrowPanel mit einem USB-Datenkabel anschließen.</span>
+            <span><strong>USB verbinden</strong>CrowPanel mit einem USB-Datenkabel anschließen.</span>
           </li>
           <li>
             <span class="step-number" aria-hidden="true">02</span>
-            <span><strong>Auswählen</strong>Auf „Mit Gerät verbinden“ klicken und den seriellen Anschluss wählen.</span>
+            <span><strong>Download-Modus</strong>BOOT halten, kurz RST drücken und danach BOOT loslassen.</span>
           </li>
           <li>
             <span class="step-number" aria-hidden="true">03</span>
+            <span><strong>Gerät auswählen</strong>Auf „Mit Gerät verbinden“ klicken und den seriellen Anschluss wählen.</span>
+          </li>
+          <li class="wide-step">
+            <span class="step-number" aria-hidden="true">04</span>
             <span><strong>Installieren</strong>Installation bestätigen und das Kabel nicht abziehen.</span>
           </li>
-          <li>
-            <span class="step-number" aria-hidden="true">04</span>
-            <span><strong>Neu starten</strong>Bei „Wrapping up“ einmal kurz die RST-Taste drücken.</span>
+          <li class="wide-step">
+            <span class="step-number" aria-hidden="true">05</span>
+            <span><strong>ScopeBuddy starten</strong>Bei „Wrapping up“ einmal kurz die RST-Taste drücken.</span>
           </li>
         </ol>
 
@@ -126,9 +145,10 @@
           <h2 id="help-heading">Keine Verbindung?</h2>
           <p>
             Schließe andere Programme mit serieller Verbindung, probiere ein
-            anderes USB-Datenkabel und lade diese Seite neu. Falls das Board nicht
-            automatisch in den Download-Modus wechselt, halte BOOT gedrückt,
-            betätige kurz RESET und lasse anschließend BOOT los.
+            anderes USB-Datenkabel und lade diese Seite neu. Wiederhole danach
+            die vollständige Tastenfolge: BOOT gedrückt halten, RST kurz drücken
+            und erst anschließend BOOT loslassen. Klicke danach erneut auf
+            „Mit Gerät verbinden“.
           </p>
         </div>
       </section>
