@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#07121e">
+    <title>ScopeBuddy installieren</title>
+    <meta
+      name="description"
+      content="ScopeBuddy 0.5 direkt im Browser auf einem Elecrow CrowPanel Advanced 5 Zoll installieren."
+    >
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css">
+    <script
+      type="module"
+      src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"
+    ></script>
+  </head>
+  <body>
+    <main>
+      <header class="hero">
+        <a class="eyebrow" href="https://github.com/johannesboernsen/ScopeBuddy">
+          ScopeBuddy auf GitHub
+        </a>
+        <h1>ScopeBuddy installieren</h1>
+        <p class="intro">
+          Übertrage ScopeBuddy 0.5 direkt aus dem Browser auf dein
+          Elecrow CrowPanel Advanced 5″ mit ESP32-P4.
+        </p>
+      </header>
+
+      <section class="installer" aria-labelledby="install-heading">
+        <div class="version-row">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span>Stabile Version 0.5</span>
+        </div>
+        <h2 id="install-heading">Bereit zur Installation</h2>
+        <ol>
+          <li>CrowPanel mit einem USB-Datenkabel an den Computer anschließen.</li>
+          <li>Auf „Mit Gerät verbinden“ klicken und den seriellen Anschluss auswählen.</li>
+          <li>Die Installation bestätigen und das Kabel nicht abziehen.</li>
+        </ol>
+
+        <esp-web-install-button manifest="manifest.json">
+          <button class="install-button" slot="activate" type="button">
+            Mit Gerät verbinden
+          </button>
+          <p class="compatibility" slot="unsupported">
+            Dieser Browser unterstützt die Installation nicht. Bitte verwende
+            Chrome oder Edge auf einem Desktop-Computer.
+          </p>
+          <p class="compatibility" slot="not-allowed">
+            Der Browser hat den Zugriff auf die serielle Schnittstelle blockiert.
+          </p>
+        </esp-web-install-button>
+
+        <p class="warning">
+          Achtung: Nur für das Elecrow CrowPanel Advanced 5″ mit ESP32-P4.
+          Die Browser-Installation setzt gespeicherte ScopeBuddy-Einstellungen
+          zurück. „Gerät löschen“ entfernt zusätzlich alle übrigen Flash-Daten.
+        </p>
+      </section>
+
+      <section class="details" aria-labelledby="help-heading">
+        <h2 id="help-heading">Wenn keine Verbindung zustande kommt</h2>
+        <p>
+          Schließe andere Programme mit serieller Verbindung, probiere ein anderes
+          USB-Datenkabel und lade diese Seite neu. Falls das Board nicht automatisch
+          in den Download-Modus wechselt, halte die BOOT-Taste gedrückt, betätige
+          kurz RESET und lasse anschließend BOOT los.
+        </p>
+      </section>
+    </main>
+
+    <footer>
+      <span>ScopeBuddy · Oszilloskop-Training mit echten Messsignalen</span>
+      <a href="https://github.com/johannesboernsen/ScopeBuddy/issues">Problem melden</a>
+    </footer>
+  </body>
+</html>

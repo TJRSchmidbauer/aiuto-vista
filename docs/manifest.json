@@ -1,0 +1,18 @@
+{
+  "name": "ScopeBuddy",
+  "version": "0.5",
+  "new_install_prompt_erase": true,
+  "new_install_improv_wait_time": 0,
+  "builds": [
+    {
+      "chipFamily": "ESP32-P4",
+      "improv": false,
+      "parts": [
+        {
+          "path": "firmware/scopebuddy-v0.5.bin",
+          "offset": 0
+        }
+      ]
+    }
+  ]
+}

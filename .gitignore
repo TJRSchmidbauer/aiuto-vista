@@ -6,3 +6,4 @@
 .vscode/
 managed_components/
 sdkconfig.old
+docs/firmware/

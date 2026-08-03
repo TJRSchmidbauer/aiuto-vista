@@ -14,7 +14,7 @@
 #include "freertos/task.h"
 #include <stdio.h>
 
-#define SCOPEBUDDY_FIRMWARE_VERSION "0.4"
+#define SCOPEBUDDY_FIRMWARE_VERSION "0.5"
 #define UI_TAG "SCOPEBUDDY_UI"
 #define SETTINGS_NAMESPACE "scopebuddy"
 #define SETTINGS_KEY "ui_flags"
