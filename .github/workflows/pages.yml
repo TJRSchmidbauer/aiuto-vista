@@ -21,15 +21,15 @@ jobs:
     container: espressif/idf:v5.4.2
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Build ScopeBuddy
-        run: idf.py build
+        run: /opt/esp/idf/tools/idf.py build
 
       - name: Create browser-installable firmware
         run: |
           mkdir -p docs/firmware
-          idf.py merge-bin -o "$GITHUB_WORKSPACE/docs/firmware/scopebuddy-v0.5.bin" -f raw
+          /opt/esp/idf/tools/idf.py merge-bin -o "$GITHUB_WORKSPACE/docs/firmware/scopebuddy-v0.5.bin" -f raw
           sha256sum docs/firmware/scopebuddy-v0.5.bin > docs/firmware/scopebuddy-v0.5.bin.sha256
 
       - name: Configure GitHub Pages
