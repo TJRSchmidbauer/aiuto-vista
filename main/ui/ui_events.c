@@ -78,6 +78,8 @@ static bool setting_scope_reset = true;
 static bool setting_encoder_enabled = true;
 static bool settings_loaded;
 static bool splash_active;
+static lv_async_cb_t pending_ui_action;
+static bool ui_action_scheduled;
 
 static void mode_event(lv_event_t *event);
 static void page_event(lv_event_t *event);
@@ -464,9 +466,24 @@ static void build_start_async(void *data)
     build_start_screen();
 }
 
+static void dispatch_ui_action_async(void *data)
+{
+    (void)data;
+    lv_async_cb_t action = pending_ui_action;
+    pending_ui_action = NULL;
+    ui_action_scheduled = false;
+    if (action) action(NULL);
+}
+
 static void queue_ui_action(lv_async_cb_t callback, const char *name)
 {
-    if (lv_async_call(callback, NULL) != LV_RES_OK) {
+    pending_ui_action = callback;
+    if (ui_action_scheduled) return;
+
+    ui_action_scheduled = true;
+    if (lv_async_call(dispatch_ui_action_async, NULL) != LV_RES_OK) {
+        pending_ui_action = NULL;
+        ui_action_scheduled = false;
         ESP_LOGE(UI_TAG, "Queuing UI action '%s' failed", name);
     }
 }
