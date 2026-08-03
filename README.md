@@ -60,6 +60,18 @@ and touch-controller drivers declared in `main/idf_component.yml`. The checked-i
 
 ScopeBuddy 0.4 is built and hardware-tested with ESP-IDF 5.4.2.
 
+## Single-channel hardware test
+
+The diagnostics screen contains a single-channel LEDC test for the original
+ScopeBuddy output:
+
+1. Open **Settings → Diagnostics → 1-channel test**.
+2. Connect oscilloscope CH1 to `GPIO48` and the probe ground to board `GND`.
+3. Start the test on the display.
+
+GPIO48 outputs a 1 kHz signal with 50% duty cycle and an expected level of
+approximately 0 to 3.3 V. Stopping or leaving the test drives GPIO48 LOW.
+
 ## Dual-channel hardware test
 
 The diagnostics screen contains a two-channel RMT test used to validate the
