@@ -80,6 +80,10 @@
             <span class="step-number" aria-hidden="true">03</span>
             <span><strong>Installieren</strong>Installation bestätigen und das Kabel nicht abziehen.</span>
           </li>
+          <li>
+            <span class="step-number" aria-hidden="true">04</span>
+            <span><strong>Neu starten</strong>Bei „Wrapping up“ einmal kurz die RST-Taste drücken.</span>
+          </li>
         </ol>
 
         <esp-web-install-button manifest="manifest.json">
@@ -95,6 +99,15 @@
             Der Browser hat den Zugriff auf die serielle Schnittstelle blockiert.
           </p>
         </esp-web-install-button>
+
+        <div class="reset-note" role="note">
+          <span class="reset-key" aria-hidden="true">RST</span>
+          <span>
+            <strong>Manueller Neustart des CrowPanels</strong>
+            Sobald der Installer „Wrapping up“ anzeigt, ist die Firmware
+            übertragen. Drücke dann einmal kurz RST, damit ScopeBuddy startet.
+          </span>
+        </div>
 
         <p class="warning">
           <span aria-hidden="true">!</span>

@@ -305,7 +305,7 @@ h2 {
 
 .steps {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 1px;
   margin: 0 0 1.5rem;
   padding: 1px;
@@ -375,6 +375,41 @@ a:focus-visible {
   color: var(--muted);
   font-size: 0.78rem;
   line-height: 1.55;
+}
+
+.reset-note {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid rgba(38, 132, 255, 0.55);
+  border-radius: 0.25rem;
+  background: rgba(20, 85, 184, 0.13);
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.reset-note strong {
+  display: block;
+  margin-bottom: 0.15rem;
+  color: var(--text-soft);
+}
+
+.reset-key {
+  display: grid;
+  min-width: 3.2rem;
+  height: 2rem;
+  place-items: center;
+  border: 1px solid var(--blue);
+  border-radius: 0.2rem;
+  background: var(--blue-panel);
+  color: var(--blue);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
 }
 
 .warning {
@@ -499,6 +534,10 @@ footer a {
 
   .details {
     grid-template-columns: 1fr;
+  }
+
+  .reset-note {
+    align-items: flex-start;
   }
 
   footer {
