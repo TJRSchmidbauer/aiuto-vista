@@ -32,123 +32,161 @@
     </header>
 
     <main>
-      <section class="hero" aria-labelledby="page-title">
-        <div class="hero-copy">
-          <p class="kicker">Web Installer</p>
-          <h1 id="page-title">ScopeBuddy<br><span>installieren</span></h1>
-          <p class="intro">
-            ScopeBuddy 0.5 direkt aus dem Browser auf dein Elecrow
-            CrowPanel Advanced 5″ mit ESP32-P4 übertragen.
+      <section class="device-notice" aria-labelledby="device-heading">
+        <span class="notice-mark" aria-hidden="true">!</span>
+        <div>
+          <p class="section-label">Kompatibilität</p>
+          <h1 id="device-heading">Nur für das Elecrow CrowPanel Advanced 5″</h1>
+          <p>
+            Dieser Installer ist ausschließlich für das Elecrow CrowPanel
+            Advanced 5″ mit ESP32-P4 und 800 × 480 Pixeln vorgesehen. Verwende
+            ihn nicht mit einem anderen ESP32 oder Display.
           </p>
-        </div>
-
-        <div class="signal-card" aria-hidden="true">
-          <div class="signal-card-head">
-            <span>CH1</span>
-            <span>1.00 kHz</span>
-          </div>
-          <svg viewBox="0 0 520 172" role="presentation">
-            <path class="signal-grid-line" d="M0 43H520M0 86H520M0 129H520M65 0V172M130 0V172M195 0V172M260 0V172M325 0V172M390 0V172M455 0V172"/>
-            <path class="signal-wave" d="M0 91H52C67 91 69 32 86 32s18 108 36 108 20-92 38-92 21 72 39 72 21-43 40-43 22 17 41 17h44c18 0 22-61 40-61s19 107 38 107 19-91 38-91 21 71 39 71 22-42 40-42 21 16 41 16h20"/>
-          </svg>
-          <span class="signal-label">USB · SERIAL FLASH</span>
         </div>
       </section>
 
       <section class="installer" aria-labelledby="install-heading">
-        <div class="panel-heading">
+        <div class="installer-intro">
           <div>
-            <p class="panel-label">Firmware</p>
-            <h2 id="install-heading">Bereit zur Installation</h2>
+            <div class="version-badge">
+              <span class="status-dot" aria-hidden="true"></span>
+              Firmware 0.5
+            </div>
+            <p class="section-label">Browser-Installation</p>
+            <h2 id="install-heading">ScopeBuddy installieren</h2>
+            <p class="intro-copy">
+              Diese Webseite überträgt ScopeBuddy 0.5 direkt über USB auf das
+              Display. Dafür sind weder ESP-IDF noch Python oder Git notwendig.
+            </p>
           </div>
-          <div class="version-badge">
-            <span class="status-dot" aria-hidden="true"></span>
-            Version 0.5
+
+          <div class="development-warning" role="note">
+            <span aria-hidden="true">!</span>
+            <p>
+              <strong>Nutzung auf eigene Gefahr.</strong>
+              ScopeBuddy befindet sich noch in Entwicklung und ist keine fertig
+              entwickelte oder abschließend getestete Software. Bei der
+              Installation werden vorhandene Flash-Daten gelöscht.
+            </p>
           </div>
         </div>
 
-        <div class="boot-mode" role="note" aria-labelledby="boot-mode-heading">
-          <div>
-            <p class="boot-mode-label">Vor dem Verbinden erforderlich</p>
-            <h3 id="boot-mode-heading">CrowPanel in den Download-Modus versetzen</h3>
-            <p>Ohne diese Tastenkombination wird der ESP32-P4 nicht im Browser angezeigt.</p>
-          </div>
-          <div class="button-sequence" aria-label="BOOT gedrückt halten, RST kurz drücken, BOOT loslassen">
-            <span><kbd>BOOT</kbd><small>halten</small></span>
-            <b aria-hidden="true">→</b>
-            <span><kbd>RST</kbd><small>kurz drücken</small></span>
-            <b aria-hidden="true">→</b>
-            <span><kbd>BOOT</kbd><small>loslassen</small></span>
-          </div>
+        <div class="guide-heading">
+          <p class="section-label">Schritt für Schritt</p>
+          <h3>So funktioniert die Installation</h3>
+          <p>Führe die folgenden Schritte in genau dieser Reihenfolge aus.</p>
         </div>
 
         <ol class="steps">
           <li>
             <span class="step-number" aria-hidden="true">01</span>
-            <span><strong>USB verbinden</strong>CrowPanel mit einem USB-Datenkabel anschließen.</span>
+            <div>
+              <strong>Display per USB verbinden</strong>
+              <p>Das Elecrow-Display mit einem USB-Datenkabel an den Rechner anschließen.</p>
+            </div>
           </li>
           <li>
             <span class="step-number" aria-hidden="true">02</span>
-            <span><strong>Download-Modus</strong>BOOT halten, kurz RST drücken und danach BOOT loslassen.</span>
+            <div>
+              <strong>Download-Modus aktivieren</strong>
+              <p>Auf der Rückseite des Displays BOOT gedrückt halten, RST kurz drücken und anschließend BOOT loslassen.</p>
+              <div class="button-sequence" aria-label="BOOT gedrückt halten, RST kurz drücken, BOOT loslassen">
+                <span><kbd>BOOT</kbd><small>halten</small></span>
+                <b aria-hidden="true">→</b>
+                <span><kbd>RST</kbd><small>drücken</small></span>
+                <b aria-hidden="true">→</b>
+                <span><kbd>BOOT</kbd><small>loslassen</small></span>
+              </div>
+            </div>
           </li>
           <li>
             <span class="step-number" aria-hidden="true">03</span>
-            <span><strong>Gerät auswählen</strong>Auf „Mit Gerät verbinden“ klicken und den seriellen Anschluss wählen.</span>
+            <div>
+              <strong>Verbindung starten</strong>
+              <p>Auf dieser Seite auf „Mit Gerät verbinden“ klicken.</p>
+            </div>
           </li>
-          <li class="wide-step">
+          <li>
             <span class="step-number" aria-hidden="true">04</span>
-            <span><strong>Installieren</strong>Installation bestätigen und das Kabel nicht abziehen.</span>
+            <div>
+              <strong>Seriellen Port auswählen</strong>
+              <p>Im Browserdialog „ESP32-P4“ als seriellen Port auswählen und die Verbindung bestätigen.</p>
+            </div>
           </li>
-          <li class="wide-step">
+          <li>
             <span class="step-number" aria-hidden="true">05</span>
-            <span><strong>ScopeBuddy starten</strong>Bei „Wrapping up“ einmal kurz die RST-Taste drücken.</span>
+            <div>
+              <strong>ScopeBuddy auswählen</strong>
+              <p>Im Installer auf „Install ScopeBuddy“ klicken.</p>
+            </div>
+          </li>
+          <li>
+            <span class="step-number" aria-hidden="true">06</span>
+            <div>
+              <strong>Löschen erlauben</strong>
+              <p>Die Option „Erase Device“ erlauben. Dabei werden die bisherigen Flash-Daten des Geräts gelöscht.</p>
+            </div>
+          </li>
+          <li>
+            <span class="step-number" aria-hidden="true">07</span>
+            <div>
+              <strong>Installation bestätigen</strong>
+              <p>Die Sicherheitsabfrage bestätigen, um das Übertragen der Firmware zu starten.</p>
+            </div>
+          </li>
+          <li>
+            <span class="step-number" aria-hidden="true">08</span>
+            <div>
+              <strong>Installation abwarten</strong>
+              <p>Das USB-Kabel nicht trennen und warten, bis der Installer „Wrapping up“ anzeigt.</p>
+            </div>
+          </li>
+          <li>
+            <span class="step-number" aria-hidden="true">09</span>
+            <div>
+              <strong>Display neu starten</strong>
+              <p>Wenn „Wrapping up“ erscheint, einmal kurz die RST-Taste auf der Rückseite des Displays drücken.</p>
+            </div>
+          </li>
+          <li>
+            <span class="step-number" aria-hidden="true">10</span>
+            <div>
+              <strong>Fertig</strong>
+              <p>ScopeBuddy startet nun automatisch auf dem Display.</p>
+            </div>
           </li>
         </ol>
 
-        <esp-web-install-button manifest="manifest.json">
-          <button class="install-button" slot="activate" type="button">
-            <span>Mit Gerät verbinden</span>
-            <span aria-hidden="true">→</span>
-          </button>
-          <p class="compatibility" slot="unsupported">
-            Dieser Browser unterstützt die Installation nicht. Bitte verwende
-            Chrome oder Edge auf einem Desktop-Computer.
-          </p>
-          <p class="compatibility" slot="not-allowed">
-            Der Browser hat den Zugriff auf die serielle Schnittstelle blockiert.
-          </p>
-        </esp-web-install-button>
-
-        <div class="reset-note" role="note">
-          <span class="reset-key" aria-hidden="true">RST</span>
-          <span>
-            <strong>Manueller Neustart des CrowPanels</strong>
-            Sobald der Installer „Wrapping up“ anzeigt, ist die Firmware
-            übertragen. Drücke dann einmal kurz RST, damit ScopeBuddy startet.
-          </span>
+        <div class="connect-area">
+          <p>Display angeschlossen und Download-Modus aktiviert?</p>
+          <esp-web-install-button manifest="manifest.json">
+            <button class="install-button" slot="activate" type="button">
+              <span>Mit Gerät verbinden</span>
+              <span aria-hidden="true">→</span>
+            </button>
+            <p class="compatibility" slot="unsupported">
+              Dieser Browser unterstützt die Installation nicht. Bitte verwende
+              Chrome oder Edge auf einem Desktop-Computer.
+            </p>
+            <p class="compatibility" slot="not-allowed">
+              Der Browser hat den Zugriff auf die serielle Schnittstelle blockiert.
+            </p>
+          </esp-web-install-button>
         </div>
-
-        <p class="warning">
-          <span aria-hidden="true">!</span>
-          <span>
-            <strong>Nur für das CrowPanel Advanced 5″ mit ESP32-P4.</strong>
-            Die Installation setzt gespeicherte ScopeBuddy-Einstellungen zurück.
-            „Gerät löschen“ entfernt zusätzlich alle übrigen Flash-Daten.
-          </span>
-        </p>
       </section>
 
       <section class="details" aria-labelledby="help-heading">
         <div class="help-mark" aria-hidden="true">?</div>
         <div>
-          <p class="panel-label">Verbindungsprobleme</p>
+          <p class="section-label">Verbindungsprobleme</p>
           <h2 id="help-heading">Keine Verbindung?</h2>
           <p>
-            Schließe andere Programme mit serieller Verbindung, probiere ein
-            anderes USB-Datenkabel und lade diese Seite neu. Wiederhole danach
-            die vollständige Tastenfolge: BOOT gedrückt halten, RST kurz drücken
-            und erst anschließend BOOT loslassen. Klicke danach erneut auf
-            „Mit Gerät verbinden“.
+            Prüfe zuerst, ob ein USB-Datenkabel verwendet wird und keine andere
+            Anwendung den seriellen Port geöffnet hat. Lade danach die Seite neu
+            und wiederhole die vollständige Tastenfolge auf der Rückseite:
+            BOOT gedrückt halten, RST kurz drücken und erst danach BOOT loslassen.
+            Klicke anschließend erneut auf „Mit Gerät verbinden“ und wähle
+            „ESP32-P4“ aus.
           </p>
         </div>
       </section>
@@ -156,7 +194,10 @@
 
     <footer>
       <span>ScopeBuddy · Oszilloskop-Training mit echten Messsignalen</span>
-      <a href="https://github.com/johannesboernsen/ScopeBuddy/issues">Problem melden ↗</a>
+      <a class="report-link" href="https://github.com/johannesboernsen/ScopeBuddy/issues">
+        Problem melden
+        <span aria-hidden="true">↗</span>
+      </a>
     </footer>
   </body>
 </html>

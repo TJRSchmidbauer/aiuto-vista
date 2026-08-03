@@ -16,11 +16,13 @@ The easiest installation method does not require ESP-IDF, Python, or Git:
 3. Put the CrowPanel into download mode every time before connecting: hold
    **BOOT**, briefly press **RST** while continuing to hold **BOOT**, and then
    release **BOOT**.
-4. Select **Connect device**, choose the CrowPanel serial port, and confirm the
-   installation.
-5. Keep the USB cable connected until the installer displays **Wrapping up**.
-   At that point the firmware has been transferred; briefly press **RST** once
-   to start ScopeBuddy and finish the installation.
+4. Select **Connect device** and choose **ESP32-P4** as the serial port.
+5. Select **Install ScopeBuddy**.
+6. Allow **Erase Device** and confirm the installation.
+7. Keep the USB cable connected and wait for the installation to finish.
+8. When the installer displays **Wrapping up**, briefly press **RST** once on
+   the back of the display.
+9. ScopeBuddy starts on the display and the installation is complete.
 
 The installer is intended only for the Elecrow CrowPanel Advance 5-inch with
 ESP32-P4. A browser installation resets settings stored by an earlier ScopeBuddy
