@@ -4,6 +4,8 @@ ScopeBuddy turns an Elecrow CrowPanel Advanced 5-inch ESP32-P4 display into a
 hands-on oscilloscope trainer. It generates real 3.3 V digital signals, presents
 randomized measurement tasks, and reveals the expected values on demand.
 
+![ScopeBuddy in its printed enclosure next to an oscilloscope displaying a generated square wave](docs/images/scopebuddy-oscilloscope-training.jpg)
+
 Firmware 0.5.1 provides 15 single- and dual-channel lessons. The display can be
 operated by touch or with an optional rotary encoder.
 
