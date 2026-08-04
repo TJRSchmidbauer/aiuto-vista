@@ -1,0 +1,47 @@
+name: Publish firmware release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v5.4.2
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Validate release version
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          grep -Fq "set(PROJECT_VER \"$VERSION\")" CMakeLists.txt
+          grep -Fq "#define SCOPEBUDDY_FIRMWARE_VERSION \"$VERSION\"" main/ui/ui_events.c
+          grep -Fq "\"version\": \"$VERSION\"" docs/manifest.json
+          grep -Fq "\"current\": \"$VERSION\"" docs/versions.json
+
+      - name: Build ScopeBuddy
+        run: /opt/esp/entrypoint.sh idf.py build
+
+      - name: Create release assets
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p release
+          /opt/esp/entrypoint.sh idf.py merge-bin -o "$GITHUB_WORKSPACE/release/scopebuddy-v$VERSION.bin" -f raw
+          cd release
+          sha256sum "scopebuddy-v$VERSION.bin" > "scopebuddy-v$VERSION.bin.sha256"
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            release/scopebuddy-*.bin
+            release/scopebuddy-*.bin.sha256

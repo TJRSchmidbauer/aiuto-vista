@@ -379,7 +379,49 @@ h3 {
   background: rgba(20, 85, 184, 0.09);
 }
 
-.connect-area > p {
+.version-selection {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.35fr) minmax(12rem, 0.65fr);
+  gap: 0.45rem 1rem;
+  align-items: center;
+  margin-bottom: 1.2rem;
+  padding-bottom: 1.2rem;
+  border-bottom: 1px solid rgba(38, 132, 255, 0.25);
+}
+
+.version-selection label {
+  color: var(--text-soft);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.version-selection select {
+  width: 100%;
+  min-height: 2.7rem;
+  padding: 0 2.3rem 0 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 0.25rem;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.version-selection select:disabled {
+  color: var(--text-soft);
+  opacity: 1;
+}
+
+.version-selection p {
+  grid-column: 2;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.connect-area > p:last-of-type {
   margin-bottom: 0.75rem;
   color: var(--text-soft);
   font-size: 0.82rem;
@@ -418,6 +460,7 @@ h3 {
 }
 
 .install-button:focus-visible,
+.version-selection select:focus-visible,
 a:focus-visible {
   outline: 3px solid var(--warning);
   outline-offset: 4px;
@@ -486,6 +529,14 @@ footer {
 
   .steps li {
     min-height: 0;
+  }
+
+  .version-selection {
+    grid-template-columns: 1fr;
+  }
+
+  .version-selection p {
+    grid-column: 1;
   }
 }
 

@@ -12,6 +12,7 @@
     >
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="styles.css">
+    <script src="installer.js" defer></script>
     <script
       type="module"
       src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"
@@ -158,8 +159,17 @@
         </ol>
 
         <div class="connect-area">
+          <div class="version-selection">
+            <label for="firmware-version">Firmware-Version</label>
+            <select id="firmware-version" aria-describedby="version-note">
+              <option value="0.5.1">0.5.1 (aktuell)</option>
+            </select>
+            <p id="version-note" aria-live="polite">
+              Version 0.5.1 ist die aktuelle, empfohlene Version.
+            </p>
+          </div>
           <p>Display angeschlossen und Download-Modus aktiviert?</p>
-          <esp-web-install-button manifest="manifest.json">
+          <esp-web-install-button id="install-button" manifest="manifest.json">
             <button class="install-button" slot="activate" type="button">
               <span>Mit Gerät verbinden</span>
               <span aria-hidden="true">→</span>

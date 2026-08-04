@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "current": "0.5.1",
+  "versions": [
+    {
+      "version": "0.5.1",
+      "recommended": true,
+      "firmware": "firmware/scopebuddy-v0.5.1.bin"
+    }
+  ]
+}
