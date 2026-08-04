@@ -1,0 +1,12 @@
+# ScopeBuddy enclosure
+
+[`ScopeBuddy.stl`](ScopeBuddy.stl) is the printable enclosure model for the
+Elecrow CrowPanel Advance 5-inch ScopeBuddy hardware.
+
+- Format: binary STL
+- Units: millimeters
+- Overall model dimensions: approximately 97 × 159.9 × 46 mm
+- SHA-256: `a4a02c17bde15460220753ae9005e1edd779837a3d6084155f440077f7377692`
+
+Import the model into a slicer without scaling. Choose print orientation,
+supports, layer height, and material settings to suit the printer and filament.

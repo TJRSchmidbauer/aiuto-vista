@@ -80,6 +80,11 @@ displayed timing values match the generated hardware sequence.
 - Optional rotary encoder; see [ENCODER.md](ENCODER.md) for wiring
 - Oscilloscope CH1 connected to `GPIO48`, CH2 to `GPIO47`, and both grounds to
   board `GND` for two-channel lessons
+- 3D-printable ScopeBuddy enclosure: [download the STL model](hardware/enclosure/ScopeBuddy.stl)
+
+The enclosure STL uses millimeters and measures approximately
+97 × 159.9 × 46 mm. Import it into a slicer without scaling; print orientation,
+supports, and material settings depend on the printer and filament in use.
 
 GPIO47 and GPIO48 are 3.3 V logic outputs intended for high-impedance
 oscilloscope or logic-analyzer inputs. Do not connect loads or external
@@ -212,6 +217,7 @@ their displayed results. Stopping a lesson leaves both outputs LOW.
 ## Project structure
 
 - `main/` — ScopeBuddy application and LVGL user interface
+- `hardware/enclosure/` — printable ScopeBuddy enclosure model
 - `peripheral/` — display, touch, backlight, I2C, and board support
 - `docs/` — GitHub Pages web installer and ESP Web Tools manifest
 - `.github/workflows/pages.yml` — reproducible firmware build and Pages deployment
