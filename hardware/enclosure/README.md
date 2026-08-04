@@ -10,3 +10,9 @@ Elecrow CrowPanel Advance 5-inch ScopeBuddy hardware.
 
 Import the model into a slicer without scaling. Choose print orientation,
 supports, layer height, and material settings to suit the printer and filament.
+
+The model is covered by the
+[ScopeBuddy Community License 1.0](../../LICENSE.md). Modified versions may be
+published with attribution and their editable source, but must use a distinct
+name. Printed ScopeBuddy devices and kits may be passed on at direct cost;
+commercial sales require a separate license.

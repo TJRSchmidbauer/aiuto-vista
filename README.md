@@ -121,6 +121,30 @@ ESP-IDF's component manager downloads the required LVGL, display, and touch
 components. `dependencies.lock` pins the component versions used for release
 builds.
 
+## License
+
+Original ScopeBuddy contributions are available under the
+[ScopeBuddy Community License 1.0](LICENSE.md). You may build, study, modify,
+and publish them, including for education and research. Published modified
+versions must provide their corresponding source, retain a reference to this
+project, and use a distinct name.
+
+ScopeBuddy devices and kits may be passed on at direct cost. Selling
+them for profit requires a separate commercial license from the repository
+owner. ScopeBuddy is therefore source-available, not Open Source as defined by
+the Open Source Initiative.
+
+Elecrow-derived board-support material and other third-party components are
+not relicensed by ScopeBuddy. Their status and the exact repository license
+boundaries are documented in [LICENSE.md](LICENSE.md) and
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+Contributions are welcome under the process in
+[CONTRIBUTING.md](CONTRIBUTING.md). Pull requests must accept the
+[Contributor License Agreement](CLA.md), which lets contributors retain their
+copyright while allowing ScopeBuddy to continue offering separate commercial
+licenses.
+
 ## Further documentation
 
 - [Rotary encoder wiring](ENCODER.md)

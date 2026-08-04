@@ -1,0 +1,166 @@
+ScopeBuddy Community License 1.0
+
+Copyright (c) 2026 Johannes Börnsen
+
+Required Notice: Based on ScopeBuddy by Johannes Börnsen — https://github.com/johannesboernsen/ScopeBuddy
+
+1. Acceptance
+
+By exercising any permission granted by this license, you accept and agree to
+its terms. If you do not agree, you receive no permission under this license.
+
+2. Definitions
+
+"Material" means the software, documentation, artwork, design files, and other
+copyrightable material that the Licensor expressly places under this license.
+
+"Licensor" means Johannes Börnsen or another copyright holder who expressly
+offers their contribution under this license.
+
+"Modified Material" means any work based on or incorporating all or a
+copyrightable part of the Material, with modifications, additions, or other
+adaptations.
+
+"Publish" means to distribute, provide, transmit, or otherwise make a copy of
+the Material or Modified Material available to another person or to the public,
+whether as source, object code, firmware, a design file, or as part of a
+physical device or kit. Private use by one legal person or organization is not
+publication.
+
+"Corresponding Source" means the preferred form actually used to modify the
+published work, including the source code, editable design files, build and
+installation scripts, and other files reasonably necessary to build or modify
+it. It does not include generally available tools or unmodified third-party
+dependencies that can be obtained using the supplied build instructions.
+
+"ScopeBuddy Device" means a physical product supplied with, running, or
+materially based on the Material or Modified Material and presented as
+ScopeBuddy or as a product based on ScopeBuddy.
+
+"ScopeBuddy Kit" means a collection of parts marketed, supplied, or packaged
+for assembly into a ScopeBuddy Device.
+
+"Direct Cost" means the actual cost of parts, third-party fabrication,
+packaging, payment processing, shipping, and applicable taxes for the specific
+device or kit. Direct Cost excludes profit, labor, development cost,
+administrative cost, and general overhead.
+
+3. Copyright permission
+
+Subject to this license, the Licensor grants you a worldwide, non-exclusive,
+royalty-free copyright license to use, reproduce, study, modify, and create
+Modified Material, and to Publish the Material or Modified Material.
+
+This permission applies only to rights that the Licensor owns or is authorized
+to license. It grants no rights in third-party material, including material
+identified as originating from or derived from Elecrow.
+
+4. Permitted purposes
+
+The permissions in section 3 include, without limitation:
+
+a. personal, hobby, educational, academic, scientific, charitable, and
+   governmental use;
+b. use by schools, universities, libraries, makerspaces, and non-profit
+   organizations, regardless of their source of funding;
+c. internal use by a person or organization;
+d. teaching, workshops, demonstrations, repair, maintenance, and support; and
+e. transferring a ScopeBuddy Device or ScopeBuddy Kit for no more than Direct
+   Cost.
+
+5. Attribution and notices
+
+Whenever you Publish the Material or Modified Material, you must:
+
+a. provide a copy of this license or a working link to its complete text;
+b. preserve existing copyright, license, and third-party notices;
+c. reproduce the Required Notice above in the accompanying documentation,
+   repository, download page, or product listing in a reasonably prominent
+   location; and
+d. clearly identify significant modifications and their date.
+
+You may not state or imply that the Licensor endorses you or your work.
+
+6. Corresponding Source
+
+Whenever you Publish Material or Modified Material, including in object code,
+firmware, a device, or a kit, you must make its Corresponding Source available
+at no additional charge at the same time. You must provide it with the
+publication or through a publicly accessible network location identified in
+the accompanying documentation or product information.
+
+The Corresponding Source for Modified Material must be offered under this same
+license, except for identifiable third-party material that remains subject to
+its own terms.
+
+7. Names of modified versions
+
+An unmodified copy may retain the ScopeBuddy name. Modified Material that is
+Published must use a distinct primary project or product name and must state
+that it is "Based on ScopeBuddy". It may not be described as an official
+ScopeBuddy release.
+
+This section does not prevent truthful references to ScopeBuddy for attribution
+or compatibility.
+
+8. Commercial sale restriction
+
+You may not sell, lease, rent, or otherwise transfer a ScopeBuddy Device or
+ScopeBuddy Kit for more than Direct Cost, or offer one for such transfer,
+without a separate written commercial license from the Licensor.
+
+Voluntary donations that are not required to receive a device or kit do not by
+themselves violate this section. Charging for teaching, workshops, repair,
+maintenance, or support does not by itself violate this section, provided the
+charge is not used to conceal profit on a transferred device or kit.
+
+9. Commercial licenses
+
+The Licensor may grant separate commercial licenses on request. Nothing in
+this license requires the Licensor to grant one or prevents the Licensor from
+licensing the Material to others on different terms.
+
+10. Trademarks
+
+No trademark or other right to use the ScopeBuddy name or logo as a brand is
+granted, except for the attribution and truthful compatibility references
+required or permitted by this license.
+
+11. Patent license
+
+To the extent the Licensor can grant patent rights, the Licensor grants you a
+worldwide, non-exclusive, royalty-free patent license under patent claims that
+would necessarily be infringed by exercising the copyright permissions granted
+in section 3. This patent license ends if you or your organization initiate a
+patent claim alleging that the Material infringes a patent.
+
+12. Termination and cure
+
+Your rights under this license terminate automatically when you violate its
+terms. If this is your first notice of a violation and you cure the violation
+and take reasonable steps to correct its effects within 30 days after receiving
+written notice, your rights are reinstated retroactively. Otherwise,
+reinstatement requires the Licensor's written permission.
+
+13. Disclaimer of warranty and limitation of liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE MATERIAL IS PROVIDED "AS IS" AND
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND
+NON-INFRINGEMENT. THE LICENSOR WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT,
+INCIDENTAL, SPECIAL, EXEMPLARY, CONSEQUENTIAL, OR OTHER DAMAGES ARISING FROM
+THE MATERIAL OR THIS LICENSE, UNDER ANY LEGAL THEORY, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGES.
+
+14. Severability and no waiver
+
+If any provision of this license is held unenforceable, it will be limited or
+removed only to the minimum extent necessary, and the remaining provisions
+will continue in effect. A failure to enforce any provision is not a waiver.
+
+15. Entire license
+
+This license is the complete grant of rights by the Licensor for the Material
+unless the Licensor gives you a separate written license. No additional right
+is implied by publication of source code or by public availability of a
+repository.
