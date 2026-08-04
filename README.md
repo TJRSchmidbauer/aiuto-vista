@@ -76,11 +76,18 @@ displayed timing values match the generated hardware sequence.
 
 ## Hardware
 
-- Elecrow CrowPanel Advance 5-inch ESP32-P4, 800 × 480
-- Optional rotary encoder; see [ENCODER.md](ENCODER.md) for wiring
-- Oscilloscope CH1 connected to `GPIO48`, CH2 to `GPIO47`, and both grounds to
-  board `GND` for two-channel lessons
-- 3D-printable ScopeBuddy enclosure: [download the STL model](hardware/enclosure/ScopeBuddy.stl)
+| Component | Model or requirement | References and sources |
+| --- | --- | --- |
+| Display | Elecrow CrowPanel Advanced 5-inch, ESP32-P4, 800 × 480 (`DHE04005D`) | [Official product page][crowpanel-product] · [Elecrow documentation][crowpanel-wiki] · [Amazon.de][crowpanel-amazon] |
+| Rotary encoder (optional) | GIAK KY-040 module, operated at 3.3 V | [Wiring](ENCODER.md) · [Amazon.de][encoder-amazon] |
+| Enclosure (optional) | ScopeBuddy 3D-printable enclosure | [STL model](hardware/enclosure/ScopeBuddy.stl) · [Model notes](hardware/enclosure/README.md) |
+
+The Amazon links are non-affiliate purchase links. Product listings and
+availability can change; use the model names and electrical requirements above
+when selecting an equivalent component.
+
+Connect oscilloscope CH1 to `GPIO48`, CH2 to `GPIO47`, and both grounds to
+board `GND` for two-channel lessons.
 
 The enclosure STL uses millimeters and measures approximately
 97 × 159.9 × 46 mm. Import it into a slicer without scaling; print orientation,
@@ -89,6 +96,11 @@ supports, and material settings depend on the printer and filament in use.
 GPIO47 and GPIO48 are 3.3 V logic outputs intended for high-impedance
 oscilloscope or logic-analyzer inputs. Do not connect loads or external
 voltages to them.
+
+[crowpanel-product]: https://www.elecrow.com/crowpanel-advanced-5inch-esp32-p4-hmi-ai-display-800x480-ips-touch-screen-with-wifi-6.html
+[crowpanel-wiki]: https://www.elecrow.com/wiki/CrowPanel_Advanced_5inch_ESP32-P4_HMI_AI_Display_800x480_IPS_Touch_Screen_with_WiFi_6.html
+[crowpanel-amazon]: https://amzn.eu/d/075Lfm2j
+[encoder-amazon]: https://amzn.eu/d/03NJfjfa
 
 ## Build
 
