@@ -1,6 +1,6 @@
 {
   "name": "ScopeBuddy",
-  "version": "0.5",
+  "version": "0.5.1",
   "new_install_prompt_erase": true,
   "new_install_improv_wait_time": 0,
   "builds": [
@@ -9,7 +9,7 @@
       "improv": false,
       "parts": [
         {
-          "path": "firmware/scopebuddy-v0.5.bin",
+          "path": "firmware/scopebuddy-v0.5.1.bin",
           "offset": 0
         }
       ]

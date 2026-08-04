@@ -56,7 +56,6 @@ typedef struct {
     const char *learning_objective;
     const char *connection_hint;
     const char *trigger_hint;
-    uint32_t accent;
     uint8_t required_channels;
 } scope_lesson_definition_t;
 

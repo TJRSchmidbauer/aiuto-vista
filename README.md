@@ -2,7 +2,7 @@
 
 ScopeBuddy is an ESP-IDF/LVGL application for the Elecrow CrowPanel Advance
 5-inch ESP32-P4 display. It provides a touch interface and rotary-encoder input
-for practical oscilloscope measurement exercises. Firmware 0.5 generates
+for practical oscilloscope measurement exercises. Firmware 0.5.1 generates
 repeatable digital signals and reveals the expected measurements on demand.
 
 ## Install from the browser
@@ -43,8 +43,9 @@ flash operation.
 
 ## Lessons
 
-ScopeBuddy 0.5 includes 15 lessons with three difficulty levels each. Nine are
-single-channel exercises:
+ScopeBuddy 0.5.1 includes 15 lessons. Each tile starts an open-ended series of
+randomized measurement challenges that continues until the user returns to the
+start screen. Nine lessons are single-channel exercises:
 
 - Periodic signal: frequency, period, and duty cycle
 - Pulse widths: HIGH time, LOW time, and duty cycle
@@ -64,6 +65,10 @@ Six additional lessons use two synchronized channels:
 - Ultrasonic echo: response delay, echo width, and calculated distance
 - Gated PWM: gate duration, PWM start delay, and pulse count
 - Quadrature encoder: period, quarter-period edge offset, and leading track
+
+Each series avoids matching any of its ten most recently generated signal
+signatures. Returning to the start screen normally requires confirmation; this
+confirmation can be disabled in the settings.
 
 The continuous PWM lessons use the ESP32-P4 LEDC peripheral. Finite and
 irregular pulse sequences use the RMT peripheral at 1 MHz resolution so their
@@ -94,7 +99,7 @@ ESP-IDF's component manager downloads LVGL, the ESP LVGL port, and the display
 and touch-controller drivers declared in `main/idf_component.yml`. The checked-in
 `dependencies.lock` pins the resolved component versions used for release builds.
 
-ScopeBuddy 0.5 is built and hardware-tested with ESP-IDF 5.4.2.
+ScopeBuddy 0.5.1 is built and hardware-tested with ESP-IDF 5.4.2.
 
 ## Web installer maintenance
 
@@ -122,7 +127,7 @@ Keep these three version values in sync for a release:
 - `SCOPEBUDDY_FIRMWARE_VERSION` in `main/ui/ui_events.c`
 - `version` and the firmware filename in `docs/manifest.json`
 
-The Pages workflow currently publishes version 0.5 from `main`. When changing
+The Pages workflow currently publishes version 0.5.1 from `main`. When changing
 the filename in the manifest, change the two matching paths in
 `.github/workflows/pages.yml` as well. Check the Actions run after pushing; a
 failed firmware build prevents deployment, so the last working installer stays
@@ -143,7 +148,7 @@ approximately 0 to 3.3 V. Stopping or leaving the test drives GPIO48 LOW.
 ## Dual-channel hardware test
 
 The diagnostics screen contains a two-channel RMT test used to validate the
-ScopeBuddy 0.5 output pair:
+ScopeBuddy 0.5.1 output pair:
 
 1. Open **Settings → Diagnostics → 2-channel test**.
 2. Connect oscilloscope CH1 to `GPIO48` and CH2 to `GPIO47`.
@@ -170,7 +175,7 @@ The general driver has also been verified on the target hardware for stopping
 both outputs at LOW and switching back from paired RMT output to an existing
 single-channel RMT lesson.
 
-All six ScopeBuddy 0.5 two-channel lessons have been smoke-tested on the target
+All six ScopeBuddy 0.5.1 two-channel lessons have been smoke-tested on the target
 CrowPanel with an oscilloscope. Trigger/response timing, phase shift, frequency
 division, ultrasonic echo timing, gated PWM, and quadrature phase order match
 their displayed results. Stopping a lesson leaves both outputs LOW.

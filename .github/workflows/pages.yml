@@ -29,8 +29,8 @@ jobs:
       - name: Create browser-installable firmware
         run: |
           mkdir -p docs/firmware
-          /opt/esp/entrypoint.sh idf.py merge-bin -o "$GITHUB_WORKSPACE/docs/firmware/scopebuddy-v0.5.bin" -f raw
-          sha256sum docs/firmware/scopebuddy-v0.5.bin > docs/firmware/scopebuddy-v0.5.bin.sha256
+          /opt/esp/entrypoint.sh idf.py merge-bin -o "$GITHUB_WORKSPACE/docs/firmware/scopebuddy-v0.5.1.bin" -f raw
+          sha256sum docs/firmware/scopebuddy-v0.5.1.bin > docs/firmware/scopebuddy-v0.5.1.bin.sha256
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
