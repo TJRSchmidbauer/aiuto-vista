@@ -1,7 +1,7 @@
 # Aiuto-Vista
 
 Aiuto-Vista
-Aiuto-Vista ist ein Fork von ScopeBuddy von Johannes Börnsen. Ziel dieses Forks ist es, ScopeBuddy so zu erweitern, dass es mit einem Cheap Yellow Display (CYD) funktioniert — einem günstigen ESP32-Display mit Touchscreen, das als kleines externes Anzeige- und Bedienpanel dienen soll.
+Aiuto-Vista ist ein Fork von ScopeBuddy von Johannes Börnsen https://github.com/johannesboernsen/ScopeBuddy. Ziel dieses Forks ist es, ScopeBuddy so zu erweitern, dass es mit einem Cheap Yellow Display (CYD) funktioniert — einem günstigen ESP32-Display mit Touchscreen, das als kleines externes Anzeige- und Bedienpanel dienen soll.
 
 ⚠️ Hinweis: Dieses Projekt befindet sich noch in aktiver Bearbeitung (Work in Progress). Die CYD-Unterstützung ist noch nicht fertig, und es kann jederzeit Änderungen an Funktionen, Struktur und Dokumentation geben. Für den produktiven Einsatz nutze bitte das Original-Repository.
 
