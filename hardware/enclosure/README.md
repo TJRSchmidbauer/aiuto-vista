@@ -9,7 +9,7 @@ Elecrow CrowPanel Advance 5-inch ScopeBuddy hardware.
 - SHA-256: `a4a02c17bde15460220753ae9005e1edd779837a3d6084155f440077f7377692`
 
 Import the model into a slicer without scaling. Choose print orientation,
-supports, layer height, and material settings to suit the printer and filament.
+supports, layer height, and material settings to suit the printer and filament. I recomend "fuzzy skin" to match the print bed structure at the front of ScopeBuddy.
 
 The model is covered by the
 [ScopeBuddy Community License 1.0](../../LICENSE.md). Modified versions may be
