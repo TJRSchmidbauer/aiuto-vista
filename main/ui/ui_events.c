@@ -1,6 +1,9 @@
+// Aiuto-Vista UI event handlers and screens.
+// Fork of ScopeBuddy (https://github.com/johannesboernsen/ScopeBuddy).
+// Layout targets a 320x240 landscape display (Cheap Yellow Display).
 #include "ui.h"
+#include "bsp_display.h"
 #include "bsp_extra.h"
-#include "encoder_input.h"
 #include "scopebuddy_lessons.h"
 #include "scopebuddy_output.h"
 #include "esp_timer.h"
@@ -14,26 +17,24 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include <stdio.h>
+#include <math.h>
 
-#define SCOPEBUDDY_FIRMWARE_VERSION "0.5.1"
-#define UI_TAG "SCOPEBUDDY_UI"
-#define SETTINGS_NAMESPACE "scopebuddy"
+#define AIUTO_VISTA_FIRMWARE_VERSION "0.6.0"
+#define UI_TAG "AIUTO_VISTA_UI"
+#define SETTINGS_NAMESPACE "aiuto_vista"
 #define SETTINGS_KEY "ui_flags"
 #define SETTING_FLAG_TIMER       (1U << 0)
 #define SETTING_FLAG_VALUES      (1U << 1)
 #define SETTING_FLAG_SCOPE_RESET (1U << 2)
-#define SETTING_FLAG_ENCODER     (1U << 3)
 #define SETTING_FLAG_SKIP_CONFIRM (1U << 4)
-#define LESSONS_PER_PAGE         3U
-#define LESSON_ACCENT_BLUE       0x2684FFU
-#define LESSON_ACCENT_RED        0xEF4444U
-#define UI_CONTENT_TOP           108
+#define LESSONS_PER_PAGE         2U
+#define UI_CONTENT_TOP           44
 #define LESSON_PAGE_TRANSITION_MS 160U
-#define LESSON_SWIPE_MIN_DISTANCE 60
-#define LESSON_CARD_PITCH        260
+#define LESSON_SWIPE_MIN_DISTANCE 40
+#define LESSON_CARD_PITCH        150
 
-LV_FONT_DECLARE(scopebuddy_font_14);
-LV_FONT_DECLARE(scopebuddy_font_24);
+LV_FONT_DECLARE(scopebuddy_font_10);
+LV_FONT_DECLARE(scopebuddy_font_16);
 
 static bool hardware_ready;
 static bool alternating_state_b;
@@ -54,42 +55,30 @@ static size_t lesson_page_count(void)
     return (scopebuddy_lesson_count() + LESSONS_PER_PAGE - 1U) / LESSONS_PER_PAGE;
 }
 
-static uint8_t interpolate_color_channel(uint8_t start, uint8_t end,
-                                         size_t position, size_t span)
-{
-    if (span == 0) return start;
-    int32_t delta = (int32_t)end - (int32_t)start;
-    return (uint8_t)((int32_t)start + delta * (int32_t)position / (int32_t)span);
-}
+static const uint32_t lesson_accent_palette[] = {
+    0xFF0000U, /* rot */
+    0xFFFF00U, /* gelb */
+    0x00FF00U, /* grün */
+    0x00FFFFU, /* cyan */
+    0x00A0FFU, /* blau */
+    0xFF00FFU, /* magenta */
+};
 
 static uint32_t lesson_accent(size_t lesson_index)
 {
-    size_t lesson_count = scopebuddy_lesson_count();
-    if (lesson_count <= 1U) return LESSON_ACCENT_BLUE;
-
-    size_t span = lesson_count - 1U;
-    if (lesson_index > span) lesson_index = span;
-    uint8_t red = interpolate_color_channel((LESSON_ACCENT_BLUE >> 16) & 0xFFU,
-                                            (LESSON_ACCENT_RED >> 16) & 0xFFU,
-                                            lesson_index, span);
-    uint8_t green = interpolate_color_channel((LESSON_ACCENT_BLUE >> 8) & 0xFFU,
-                                              (LESSON_ACCENT_RED >> 8) & 0xFFU,
-                                              lesson_index, span);
-    uint8_t blue = interpolate_color_channel(LESSON_ACCENT_BLUE & 0xFFU,
-                                             LESSON_ACCENT_RED & 0xFFU,
-                                             lesson_index, span);
-    return ((uint32_t)red << 16) | ((uint32_t)green << 8) | blue;
+    const size_t palette_size =
+        sizeof(lesson_accent_palette) / sizeof(lesson_accent_palette[0]);
+    return lesson_accent_palette[lesson_index % palette_size];
 }
 
 static lv_obj_t *action_button;
 static lv_obj_t *action_label;
 static lv_obj_t *all_values_button;
 static lv_obj_t *all_values_label;
-static lv_obj_t *advance_button;
-static lv_obj_t *timer_label;
 static lv_timer_t *game_clock;
 static lv_timer_t *splash_timer;
 static lv_timer_t *diagnostics_timer;
+static lv_obj_t *timer_label;
 static lv_obj_t *diagnostics_values_label;
 static lv_obj_t *single_test_status_label;
 static lv_obj_t *single_test_action_label;
@@ -102,16 +91,12 @@ static lv_obj_t *measurement_values[SCOPEBUDDY_MAX_MEASUREMENTS];
 static lv_obj_t *measurement_boxes[SCOPEBUDDY_MAX_MEASUREMENTS];
 static lv_obj_t *measurement_marks[SCOPEBUDDY_MAX_MEASUREMENTS];
 static lv_obj_t *confirm_overlay;
-static lv_group_t *confirm_group;
-static lv_group_t *confirm_background_group;
 static bool confirm_action_pending;
-static lv_obj_t *page_default_focus;
 static bool measurement_selected[SCOPEBUDDY_MAX_MEASUREMENTS];
 static bool measurement_revealed[SCOPEBUDDY_MAX_MEASUREMENTS];
 static bool setting_show_timer = true;
 static bool setting_reveal_values;
 static bool setting_scope_reset = true;
-static bool setting_encoder_enabled = true;
 static bool setting_confirm_home = true;
 static bool settings_loaded;
 static bool splash_active;
@@ -124,6 +109,8 @@ static int8_t lesson_page_entry_direction;
 static bool lesson_page_transition_pending;
 static lv_point_t lesson_swipe_start;
 static bool lesson_swipe_tracking;
+static lv_point_t lesson_card_press_start;
+static bool lesson_card_moved;
 
 static void mode_event(lv_event_t *event);
 static void page_event(lv_event_t *event);
@@ -134,16 +121,16 @@ static void build_diagnostics_screen(void);
 static void build_hardware_tests_screen(void);
 static void build_scope_reset_screen(void);
 static void build_question_screen(void);
+static void build_calibration_screen(void);
 static void reveal_measurement(uint8_t index, const char *value);
 static void log_operation_error(const char *operation, esp_err_t err);
-static void close_confirm_encoder_group(void);
+static void stop_diagnostics_updates(void);
 
 static uint8_t settings_flags(void)
 {
     return (setting_show_timer ? SETTING_FLAG_TIMER : 0U) |
            (setting_reveal_values ? SETTING_FLAG_VALUES : 0U) |
            (setting_scope_reset ? SETTING_FLAG_SCOPE_RESET : 0U) |
-           (setting_encoder_enabled ? SETTING_FLAG_ENCODER : 0U) |
            (!setting_confirm_home ? SETTING_FLAG_SKIP_CONFIRM : 0U);
 }
 
@@ -156,12 +143,10 @@ static void load_settings(void)
     esp_err_t err = nvs_open(SETTINGS_NAMESPACE, NVS_READONLY, &handle);
     if (err == ESP_ERR_NVS_NOT_FOUND) {
         ESP_LOGI(UI_TAG, "No stored settings; using defaults");
-        encoder_input_set_enabled(setting_encoder_enabled);
         return;
     }
     if (err != ESP_OK) {
         log_operation_error("Opening stored settings", err);
-        encoder_input_set_enabled(setting_encoder_enabled);
         return;
     }
 
@@ -171,7 +156,6 @@ static void load_settings(void)
         setting_show_timer = (flags & SETTING_FLAG_TIMER) != 0;
         setting_reveal_values = (flags & SETTING_FLAG_VALUES) != 0;
         setting_scope_reset = (flags & SETTING_FLAG_SCOPE_RESET) != 0;
-        setting_encoder_enabled = (flags & SETTING_FLAG_ENCODER) != 0;
         setting_confirm_home = (flags & SETTING_FLAG_SKIP_CONFIRM) == 0;
         ESP_LOGI(UI_TAG, "Loaded settings flags: 0x%02x", flags);
     } else if (flags_err != ESP_ERR_NVS_NOT_FOUND) {
@@ -179,7 +163,6 @@ static void load_settings(void)
     }
 
     nvs_close(handle);
-    encoder_input_set_enabled(setting_encoder_enabled);
 }
 
 static void save_settings(void)
@@ -232,11 +215,11 @@ static const char *reset_reason_name(esp_reset_reason_t reason)
 {
     switch (reason) {
     case ESP_RST_POWERON: return "POWER-ON";
-    case ESP_RST_EXT: return "EXTERNER RESET";
-    case ESP_RST_SW: return "SOFTWARE-RESET";
+    case ESP_RST_EXT: return "EXT-RESET";
+    case ESP_RST_SW: return "SW-RESET";
     case ESP_RST_PANIC: return "PANIC/ASSERT";
-    case ESP_RST_INT_WDT: return "INTERRUPT-WATCHDOG";
-    case ESP_RST_TASK_WDT: return "TASK-WATCHDOG";
+    case ESP_RST_INT_WDT: return "INT-WDT";
+    case ESP_RST_TASK_WDT: return "TASK-WDT";
     case ESP_RST_WDT: return "WATCHDOG";
     case ESP_RST_DEEPSLEEP: return "DEEP-SLEEP";
     case ESP_RST_BROWNOUT: return "BROWNOUT";
@@ -244,7 +227,7 @@ static const char *reset_reason_name(esp_reset_reason_t reason)
     case ESP_RST_USB: return "USB";
     case ESP_RST_JTAG: return "JTAG";
     case ESP_RST_EFUSE: return "EFUSE-FEHLER";
-    case ESP_RST_PWR_GLITCH: return "POWER-GLITCH";
+    case ESP_RST_PWR_GLITCH: return "PWR-GLITCH";
     case ESP_RST_CPU_LOCKUP: return "CPU-LOCKUP";
     default: return "UNBEKANNT";
     }
@@ -539,15 +522,10 @@ static lv_obj_t *make_label(lv_obj_t *parent, const char *text, int x, int y,
     lv_label_set_text(label, text);
     lv_obj_set_pos(label, x, y);
     lv_obj_set_style_text_font(label,
-                               font == &lv_font_montserrat_24 ? &scopebuddy_font_24 : &scopebuddy_font_14,
+                               font == &lv_font_montserrat_16 ? &scopebuddy_font_16 : &scopebuddy_font_10,
                                0);
     lv_obj_set_style_text_color(label, lv_color_hex(color), 0);
     return label;
-}
-
-static void remove_default_focus_outline(lv_obj_t *object)
-{
-    lv_obj_remove_style(object, NULL, LV_STATE_FOCUS_KEY);
 }
 
 static lv_obj_t *make_button(lv_obj_t *parent, const char *text, int x, int y,
@@ -555,17 +533,16 @@ static lv_obj_t *make_button(lv_obj_t *parent, const char *text, int x, int y,
                              lv_event_cb_t callback, void *user_data)
 {
     lv_obj_t *button = lv_btn_create(parent);
-    remove_default_focus_outline(button);
     lv_obj_set_pos(button, x, y);
     lv_obj_set_size(button, width, height);
-    lv_obj_set_style_radius(button, 14, 0);
+    lv_obj_set_style_radius(button, 6, 0);
     lv_obj_set_style_bg_color(button, lv_color_hex(color), 0);
     lv_obj_add_flag(button, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_set_ext_click_area(button, 2);
     lv_obj_add_event_cb(button, callback, LV_EVENT_RELEASED, user_data);
-    lv_obj_add_event_cb(button, encoder_input_touch_event, LV_EVENT_PRESSED, NULL);
     lv_obj_t *label = lv_label_create(button);
     lv_label_set_text(label, text);
-    lv_obj_set_style_text_font(label, &scopebuddy_font_14, 0);
+    lv_obj_set_style_text_font(label, &scopebuddy_font_10, 0);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_center(label);
     return button;
@@ -577,7 +554,7 @@ static void make_divider(lv_obj_t *parent, int x, int y, int width)
     lv_obj_set_pos(line, x, y);
     lv_obj_set_size(line, width, 2);
     lv_obj_clear_flag(line, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_bg_color(line, lv_color_hex(0x26384B), 0);
+    lv_obj_set_style_bg_color(line, lv_color_hex(0x808080), 0);
     lv_obj_set_style_bg_opa(line, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(line, 0, 0);
     lv_obj_set_style_pad_all(line, 0, 0);
@@ -586,11 +563,6 @@ static void make_divider(lv_obj_t *parent, int x, int y, int width)
 static void splash_set_opacity(void *object, int32_t value)
 {
     lv_obj_set_style_opa((lv_obj_t *)object, (lv_opa_t)value, 0);
-}
-
-static void splash_set_zoom(void *object, int32_t value)
-{
-    lv_img_set_zoom((lv_obj_t *)object, (uint16_t)value);
 }
 
 static void splash_finish_callback(lv_timer_t *timer)
@@ -611,68 +583,34 @@ static void build_splash_screen(void)
 
     lv_obj_t *background = lv_obj_create(ui_Screen1);
     lv_obj_set_pos(background, 0, 0);
-    lv_obj_set_size(background, 800, 480);
+    lv_obj_set_size(background, 320, 240);
     lv_obj_clear_flag(background, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_style_radius(background, 0, 0);
-    lv_obj_set_style_bg_color(background, lv_color_hex(0x050B12), 0);
+    lv_obj_set_style_bg_color(background, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(background, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(background, 0, 0);
     lv_obj_set_style_pad_all(background, 0, 0);
 
     lv_obj_t *title = lv_label_create(background);
-    lv_label_set_text(title, "ScopeBuddy");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_32, 0);
-    lv_obj_set_style_text_color(title, lv_color_hex(0xF4FAFF), 0);
-    lv_obj_update_layout(background);
-
-    const int logo_width = 80;
-    const int logo_height = 139;
-    const int brand_gap = 22;
-    const int brand_y = 142;
-    int brand_width = logo_width + brand_gap + lv_obj_get_width(title);
-    int brand_x = (800 - brand_width) / 2;
-
-    lv_obj_t *logo = lv_img_create(background);
-    lv_img_set_src(logo, &ui_img_scopebuddy_splash);
-    lv_obj_set_pos(logo, brand_x, brand_y);
-    lv_img_set_pivot(logo, 40, 70);
-    lv_img_set_zoom(logo, 150);
-    lv_obj_set_style_opa(logo, LV_OPA_TRANSP, 0);
-
-    lv_obj_set_pos(title, brand_x + logo_width + brand_gap,
-                   brand_y + (logo_height - lv_obj_get_height(title)) / 2);
+    lv_label_set_text(title, "Aiuto-Vista");
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_align(title, LV_ALIGN_CENTER, 0, -30);
     lv_obj_set_style_opa(title, LV_OPA_TRANSP, 0);
 
     lv_obj_t *version = make_label(background,
-                                   "Firmware-Version " SCOPEBUDDY_FIRMWARE_VERSION,
-                                   0, 350, &lv_font_montserrat_14, 0x8FA5C2);
-    lv_obj_align(version, LV_ALIGN_TOP_MID, 0, 350);
+                                   "Firmware-Version " AIUTO_VISTA_FIRMWARE_VERSION,
+                                   0, 140, &lv_font_montserrat_10, 0x808080);
+    lv_obj_align(version, LV_ALIGN_TOP_MID, 0, 140);
     lv_obj_set_style_opa(version, LV_OPA_TRANSP, 0);
 
     lv_anim_t animation;
-    lv_anim_init(&animation);
-    lv_anim_set_var(&animation, logo);
-    lv_anim_set_exec_cb(&animation, splash_set_zoom);
-    lv_anim_set_values(&animation, 150, 256);
-    lv_anim_set_time(&animation, 650);
-    lv_anim_set_delay(&animation, 100);
-    lv_anim_set_path_cb(&animation, lv_anim_path_ease_out);
-    lv_anim_start(&animation);
-
-    lv_anim_init(&animation);
-    lv_anim_set_var(&animation, logo);
-    lv_anim_set_exec_cb(&animation, splash_set_opacity);
-    lv_anim_set_values(&animation, LV_OPA_TRANSP, LV_OPA_COVER);
-    lv_anim_set_time(&animation, 480);
-    lv_anim_set_delay(&animation, 100);
-    lv_anim_start(&animation);
-
     lv_anim_init(&animation);
     lv_anim_set_var(&animation, title);
     lv_anim_set_exec_cb(&animation, splash_set_opacity);
     lv_anim_set_values(&animation, LV_OPA_TRANSP, LV_OPA_COVER);
     lv_anim_set_time(&animation, 420);
-    lv_anim_set_delay(&animation, 620);
+    lv_anim_set_delay(&animation, 100);
     lv_anim_start(&animation);
 
     lv_anim_init(&animation);
@@ -710,7 +648,7 @@ static void update_solution_buttons(void)
     if (any_selected) lv_obj_clear_state(action_button, LV_STATE_DISABLED);
     else lv_obj_add_state(action_button, LV_STATE_DISABLED);
     lv_obj_set_style_text_color(action_label,
-                                lv_color_hex(any_selected ? 0xDCE8F7 : 0x607895), 0);
+                                lv_color_hex(any_selected ? 0xFFFFFF : 0x808080), 0);
     lv_label_set_text(action_label,
                       any_selected && all_selected_visible ?
                       "AUSGEWÄHLTE WERTE\nVERBERGEN" :
@@ -724,7 +662,7 @@ static void measurement_event(lv_event_t *event)
     uint8_t index = (uint8_t)(uintptr_t)lv_event_get_user_data(event);
     measurement_selected[index] = !measurement_selected[index];
     lv_label_set_text(measurement_marks[index], measurement_selected[index] ? "X" : "");
-    lv_obj_set_style_bg_color(measurement_boxes[index], lv_color_hex(0x1455B8), 0);
+    lv_obj_set_style_bg_color(measurement_boxes[index], lv_color_hex(0x00A0FF), 0);
     lv_obj_set_style_bg_opa(measurement_boxes[index],
                             measurement_selected[index] ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
 
@@ -736,8 +674,8 @@ static const char *measurement_source_name(scope_measurement_source_t source)
     switch (source) {
     case SCOPE_MEASUREMENT_CHANNEL_1: return "CH1";
     case SCOPE_MEASUREMENT_CHANNEL_2: return "CH2";
-    case SCOPE_MEASUREMENT_CHANNEL_PAIR: return "CH1/CH2";
-    case SCOPE_MEASUREMENT_DERIVED: return "BERECHNET";
+    case SCOPE_MEASUREMENT_CHANNEL_PAIR: return "PAAR";
+    case SCOPE_MEASUREMENT_DERIVED: return "BER.";
     default: return "";
     }
 }
@@ -745,11 +683,11 @@ static const char *measurement_source_name(scope_measurement_source_t source)
 static uint32_t measurement_source_color(scope_measurement_source_t source)
 {
     switch (source) {
-    case SCOPE_MEASUREMENT_CHANNEL_1: return 0x2684FF;
-    case SCOPE_MEASUREMENT_CHANNEL_2: return 0xE6B43C;
-    case SCOPE_MEASUREMENT_CHANNEL_PAIR: return 0x18B8C9;
-    case SCOPE_MEASUREMENT_DERIVED: return 0x9A70E5;
-    default: return 0x607895;
+    case SCOPE_MEASUREMENT_CHANNEL_1: return 0x00A0FF;
+    case SCOPE_MEASUREMENT_CHANNEL_2: return 0xFFFF00;
+    case SCOPE_MEASUREMENT_CHANNEL_PAIR: return 0x00FFFF;
+    case SCOPE_MEASUREMENT_DERIVED: return 0xFF00FF;
+    default: return 0x808080;
     }
 }
 
@@ -757,58 +695,56 @@ static void make_measurement_item(lv_obj_t *parent, const scope_measurement_t *m
                                   int y, uint8_t index)
 {
     lv_obj_t *box = lv_obj_create(parent);
-    lv_obj_set_pos(box, 18, y - 3);
-    lv_obj_set_size(box, 30, 30);
+    lv_obj_set_pos(box, 4, y - 1);
+    lv_obj_set_size(box, 12, 12);
     lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(box, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_radius(box, 5, 0);
+    lv_obj_set_style_radius(box, 3, 0);
     lv_obj_set_style_bg_opa(box, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_color(box, lv_color_hex(0x2684FF), 0);
+    lv_obj_set_style_border_color(box, lv_color_hex(0x00A0FF), 0);
     lv_obj_set_style_border_width(box, 2, 0);
     lv_obj_set_style_pad_all(box, 0, 0);
     measurement_boxes[index] = box;
-    measurement_marks[index] = make_label(box, "", 8, 4, &lv_font_montserrat_14, 0xFFFFFF);
+    measurement_marks[index] = make_label(box, "", 3, 1, &lv_font_montserrat_10, 0xFFFFFF);
     lv_obj_add_event_cb(box, measurement_event, LV_EVENT_RELEASED,
                         (void *)(uintptr_t)index);
-    lv_obj_add_event_cb(box, encoder_input_touch_event, LV_EVENT_PRESSED, NULL);
-    lv_group_t *encoder_group = lv_group_get_default();
-    if (encoder_group) lv_group_add_obj(encoder_group, box);
     lv_obj_t *source_label = make_label(
-        parent, measurement_source_name(measurement->source), 58, y + 3,
-        &lv_font_montserrat_14, measurement_source_color(measurement->source));
-    lv_obj_set_width(source_label, 76);
-    lv_obj_t *measurement_label = make_label(parent, measurement->label, 142, y + 3,
-                                              &lv_font_montserrat_14, 0xDCE8F7);
-    lv_obj_set_width(measurement_label, 145);
-    measurement_values[index] = make_label(parent, "---", 297, y + 3,
-                                            &lv_font_montserrat_14, 0x607895);
-    lv_obj_set_width(measurement_values[index], 90);
+        parent, measurement_source_name(measurement->source), 20, y + 1,
+        &lv_font_montserrat_10, measurement_source_color(measurement->source));
+    lv_obj_set_width(source_label, 40);
+    lv_obj_t *measurement_label = make_label(parent, measurement->label, 50, y + 1,
+                                              &lv_font_montserrat_10, 0xFFFFFF);
+    lv_obj_set_width(measurement_label, 54);
+    lv_obj_set_style_text_line_space(measurement_label, 3, 0);
+    measurement_values[index] = make_label(parent, "---", 106, y + 1,
+                                            &lv_font_montserrat_10, 0x808080);
+    lv_obj_set_width(measurement_values[index], 36);
     lv_obj_set_style_text_align(measurement_values[index], LV_TEXT_ALIGN_RIGHT, 0);
 
     lv_obj_t *touch_area = lv_obj_create(parent);
-    lv_obj_set_pos(touch_area, 12, y - 7);
-    lv_obj_set_size(touch_area, 381, 42);
+    lv_obj_set_pos(touch_area, 4, y - 3);
+    lv_obj_set_size(touch_area, 135, 17);
     lv_obj_clear_flag(touch_area, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(touch_area, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_ext_click_area(touch_area, 2);
     lv_obj_set_style_bg_opa(touch_area, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(touch_area, 0, 0);
     lv_obj_set_style_pad_all(touch_area, 0, 0);
     lv_obj_add_event_cb(touch_area, measurement_event, LV_EVENT_RELEASED,
                         (void *)(uintptr_t)index);
-    lv_obj_add_event_cb(touch_area, encoder_input_touch_event, LV_EVENT_PRESSED, NULL);
 }
 
 static void reveal_measurement(uint8_t index, const char *value)
 {
     lv_label_set_text(measurement_values[index], value);
-    lv_obj_set_style_text_color(measurement_values[index], lv_color_hex(0x5DE08B), 0);
+    lv_obj_set_style_text_color(measurement_values[index], lv_color_hex(0x00FF00), 0);
     measurement_revealed[index] = true;
 }
 
 static void hide_measurement(uint8_t index)
 {
     lv_label_set_text(measurement_values[index], "---");
-    lv_obj_set_style_text_color(measurement_values[index], lv_color_hex(0x607895), 0);
+    lv_obj_set_style_text_color(measurement_values[index], lv_color_hex(0x808080), 0);
     measurement_revealed[index] = false;
 }
 
@@ -822,40 +758,72 @@ static void apply_direct_value_setting(void)
     if (action_button) lv_obj_add_flag(action_button, LV_OBJ_FLAG_HIDDEN);
 }
 
+static void lesson_card_event(lv_event_t *event)
+{
+    lv_event_code_t code = lv_event_get_code(event);
+    lv_indev_t *input = lv_indev_get_act();
+    if (!input || lv_indev_get_type(input) != LV_INDEV_TYPE_POINTER) return;
+
+    if (code == LV_EVENT_PRESSED) {
+        lv_indev_get_point(input, &lesson_card_press_start);
+        lesson_card_moved = false;
+        return;
+    }
+
+    if (code == LV_EVENT_PRESSING) {
+        if (lesson_page_transition_pending) return;
+        lv_point_t current;
+        lv_indev_get_point(input, &current);
+        int32_t dx = current.x - lesson_card_press_start.x;
+        int32_t dy = current.y - lesson_card_press_start.y;
+        if ((dx < 0 ? -dx : dx) > LESSON_SWIPE_MIN_DISTANCE ||
+            (dy < 0 ? -dy : dy) > LESSON_SWIPE_MIN_DISTANCE) {
+            lesson_card_moved = true;
+        }
+        return;
+    }
+
+    if ((code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) &&
+        !lesson_card_moved && !lesson_page_transition_pending) {
+        mode_event(event);
+    }
+}
+
 static void make_mode_card(lv_obj_t *parent, int x, size_t lesson_index,
                            const scope_lesson_definition_t *lesson)
 {
     uint32_t accent = lesson_accent(lesson_index);
     lv_obj_t *card = lv_obj_create(parent);
     lv_obj_set_pos(card, x, UI_CONTENT_TOP);
-    lv_obj_set_size(card, 230, 278);
+    lv_obj_set_size(card, 140, 156);
     lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(card, LV_OBJ_FLAG_GESTURE_BUBBLE | LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_style_radius(card, 10, 0);
-    lv_obj_set_style_bg_color(card, lv_color_hex(0x0D1927), 0);
-    lv_obj_set_style_border_width(card, 1, 0);
+    lv_obj_set_ext_click_area(card, 2);
+    lv_obj_set_style_radius(card, 5, 0);
+    lv_obj_set_style_bg_color(card, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_border_width(card, 3, 0);
     lv_obj_set_style_pad_all(card, 0, 0);
+    lv_obj_add_event_cb(card, lesson_card_event, LV_EVENT_ALL, (void *)(uintptr_t)lesson->id);
 
     lv_obj_set_style_border_color(card, lv_color_hex(accent), 0);
-    lv_obj_t *title = make_label(card, lesson->title, 18, 20,
-                                 &lv_font_montserrat_24, accent);
-    lv_obj_set_width(title, 198);
-    lv_obj_set_style_text_font(title, &scopebuddy_font_14, 0);
-    make_label(card, lesson->category, 18, 58, &lv_font_montserrat_14, 0xDCE8F7);
-    lv_obj_t *description = make_label(card, lesson->summary, 18, 98,
-                                       &lv_font_montserrat_14, 0x8FA5C2);
-    lv_obj_set_width(description, 194);
-    lv_obj_set_style_text_line_space(description, 6, 0);
+    lv_obj_t *title = make_label(card, lesson->title, 7, 8,
+                                 &lv_font_montserrat_16, accent);
+    lv_obj_set_width(title, 126);
+    lv_obj_set_style_text_font(title, &scopebuddy_font_10, 0);
+    make_label(card, lesson->category, 7, 23, &lv_font_montserrat_10, 0xDCE8F7);
+    lv_obj_t *description = make_label(card, lesson->summary, 7, 39,
+                                       &lv_font_montserrat_10, 0x8FA5C2);
+    lv_obj_set_width(description, 126);
+    lv_obj_set_style_text_line_space(description, 2, 0);
     char channel_badge[8];
     snprintf(channel_badge, sizeof(channel_badge), "%u CH", lesson->required_channels);
-    lv_obj_t *badge = make_label(card, channel_badge, 160, 190,
-                                 &lv_font_montserrat_14,
+    lv_obj_t *badge = make_label(card, channel_badge, 112, 104,
+                                 &lv_font_montserrat_10,
                                  lesson->required_channels == 2 ? 0x18B8C9 : 0x607895);
-    lv_obj_set_width(badge, 52);
+    lv_obj_set_width(badge, 21);
     lv_obj_set_style_text_align(badge, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_t *start_button = make_button(card, "STARTEN", 18, 222, 194, 42, accent,
-                                         mode_event, (void *)(uintptr_t)lesson->id);
-    lv_obj_add_flag(start_button, LV_OBJ_FLAG_EVENT_BUBBLE);
+    make_label(card, "TIPPEN ZUM STARTEN", 7, 130,
+               &lv_font_montserrat_10, accent);
 }
 
 static void mode_event(lv_event_t *event)
@@ -1039,7 +1007,6 @@ static void begin_question_event(lv_event_t *event)
 static void return_home_async(void *data)
 {
     (void)data;
-    close_confirm_encoder_group();
     confirm_action_pending = false;
     confirm_overlay = NULL;
     build_start_screen();
@@ -1048,24 +1015,10 @@ static void return_home_async(void *data)
 static void dismiss_confirm_async(void *data)
 {
     (void)data;
-    close_confirm_encoder_group();
     lv_obj_t *overlay = confirm_overlay;
     confirm_overlay = NULL;
     confirm_action_pending = false;
     if (overlay && lv_obj_is_valid(overlay)) lv_obj_del(overlay);
-    if (page_default_focus && lv_obj_is_valid(page_default_focus)) {
-        lv_group_focus_obj(page_default_focus);
-    }
-}
-
-static void close_confirm_encoder_group(void)
-{
-    if (!confirm_group) return;
-
-    encoder_input_activate_group(confirm_background_group);
-    lv_group_del(confirm_group);
-    confirm_group = NULL;
-    confirm_background_group = NULL;
 }
 
 static void home_dialog_event(lv_event_t *event)
@@ -1096,51 +1049,40 @@ static void home_event(lv_event_t *event)
     }
 
     confirm_action_pending = false;
-    confirm_background_group = lv_group_get_default();
-    if (confirm_background_group) {
-        confirm_group = lv_group_create();
-        if (confirm_group) lv_group_set_default(confirm_group);
-    }
-
     confirm_overlay = lv_obj_create(ui_Screen1);
     lv_obj_set_pos(confirm_overlay, 0, 0);
-    lv_obj_set_size(confirm_overlay, 800, 480);
+    lv_obj_set_size(confirm_overlay, 320, 240);
     lv_obj_clear_flag(confirm_overlay, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_radius(confirm_overlay, 0, 0);
-    lv_obj_set_style_bg_color(confirm_overlay, lv_color_hex(0x02060B), 0);
+    lv_obj_set_style_bg_color(confirm_overlay, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(confirm_overlay, LV_OPA_80, 0);
     lv_obj_set_style_border_width(confirm_overlay, 0, 0);
     lv_obj_set_style_pad_all(confirm_overlay, 0, 0);
 
     lv_obj_t *dialog = lv_obj_create(confirm_overlay);
-    lv_obj_set_pos(dialog, 105, 105);
-    lv_obj_set_size(dialog, 590, 270);
+    lv_obj_set_pos(dialog, 42, 42);
+    lv_obj_set_size(dialog, 236, 108);
     lv_obj_clear_flag(dialog, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(dialog, 12, 0);
-    lv_obj_set_style_bg_color(dialog, lv_color_hex(0x0D1927), 0);
+    lv_obj_set_style_radius(dialog, 6, 0);
+    lv_obj_set_style_bg_color(dialog, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(dialog, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(dialog, lv_color_hex(0x2684FF), 0);
+    lv_obj_set_style_border_color(dialog, lv_color_hex(0x00A0FF), 0);
     lv_obj_set_style_border_width(dialog, 2, 0);
     lv_obj_set_style_pad_all(dialog, 0, 0);
 
-    make_label(dialog, "Messreihe abbrechen?", 28, 25,
-               &lv_font_montserrat_24, 0xF4FAFF);
+    make_label(dialog, "Messreihe abbrechen?", 11, 10,
+               &lv_font_montserrat_16, 0xFFFFFF);
     lv_obj_t *description = make_label(dialog,
-        "Möchtest du die laufende Messreihe wirklich abbrechen\nund zur Startseite zurückkehren?",
-        28, 82, &lv_font_montserrat_14, 0xAFC2DC);
-    lv_obj_set_style_text_line_space(description, 7, 0);
-    make_divider(dialog, 28, 148, 534);
+        "Möchtest du die laufende Messreihe\nwirklich abbrechen und zurückkehren?",
+        11, 33, &lv_font_montserrat_10, 0x808080);
+    lv_obj_set_style_text_line_space(description, 3, 0);
+    make_divider(dialog, 11, 59, 214);
     lv_obj_t *continue_button = make_button(
-        dialog, "WEITERMACHEN", 28, 178, 250, 64, 0x26384B,
+        dialog, "WEITER", 11, 71, 100, 26, 0x808080,
         home_dialog_event, (void *)(uintptr_t)false);
-    make_button(dialog, "ZUR STARTSEITE", 312, 178, 250, 64, 0x1455B8,
+    make_button(dialog, "STARTSEITE", 125, 71, 100, 26, 0x00A0FF,
                 home_dialog_event, (void *)(uintptr_t)true);
-
-    if (confirm_group) {
-        lv_group_set_default(confirm_background_group);
-        encoder_input_activate_group(confirm_group);
-        lv_group_focus_obj(continue_button);
-    }
+    (void)continue_button;
 }
 
 static void settings_event(lv_event_t *event)
@@ -1185,8 +1127,8 @@ static void update_hardware_test_control(lv_obj_t *status_label, lv_obj_t *actio
                           err != ESP_OK ? "FEHLER - SERIELLEN LOG PRÜFEN" :
                           running ? active_text : "GESTOPPT");
         lv_obj_set_style_text_color(status_label,
-                                    lv_color_hex(err != ESP_OK ? 0xE06B6B :
-                                                 running ? 0x5DE08B : 0x8FA5C2), 0);
+                                    lv_color_hex(err != ESP_OK ? 0xFF0000 :
+                                                 running ? 0x00FF00 : 0x808080), 0);
     }
     if (action_label) {
         lv_label_set_text(action_label, running ? "TEST STOPPEN" : "TEST STARTEN");
@@ -1214,7 +1156,7 @@ static void single_test_toggle_event(lv_event_t *event)
     log_operation_error(starting ? "Starting one-channel test" :
                                    "Stopping one-channel test", err);
     update_hardware_test_control(single_test_status_label, single_test_action_label,
-                                 single_test_running, "AKTIV - GPIO48 MESSEN", err);
+                                 single_test_running, "AKTIV - GPIO26 MESSEN", err);
 }
 
 static void sync_test_toggle_event(lv_event_t *event)
@@ -1260,19 +1202,216 @@ static void scope_reset_setting_event(lv_event_t *event)
     save_settings();
 }
 
-static void encoder_setting_event(lv_event_t *event)
-{
-    lv_obj_t *toggle = lv_event_get_target(event);
-    setting_encoder_enabled = lv_obj_has_state(toggle, LV_STATE_CHECKED);
-    encoder_input_set_enabled(setting_encoder_enabled);
-    save_settings();
-}
-
 static void confirm_home_setting_event(lv_event_t *event)
 {
     lv_obj_t *toggle = lv_event_get_target(event);
     setting_confirm_home = lv_obj_has_state(toggle, LV_STATE_CHECKED);
     save_settings();
+}
+
+/* Touch calibration: tap 5 crosses (center + 4 corners) in order. Raw touch
+ * coordinates are captured (calibration raw mode) and a 6-parameter affine
+ * transform is fitted via least squares, then stored per device in NVS. */
+
+static const lv_point_t cal_targets[5] = {
+    {160, 120}, {40, 40}, {280, 40}, {280, 200}, {40, 200},
+};
+static uint16_t cal_raw_x[5];
+static uint16_t cal_raw_y[5];
+static uint8_t cal_step = 0;
+static lv_obj_t *cal_crosses[5];
+static lv_obj_t *cal_step_label = NULL;
+
+static void set_cross_color(uint8_t index, uint32_t color)
+{
+    if (index >= 5 || cal_crosses[index] == NULL) return;
+    uint32_t child_count = lv_obj_get_child_cnt(cal_crosses[index]);
+    for (uint32_t i = 0; i < child_count; ++i) {
+        lv_obj_set_style_bg_color(lv_obj_get_child(cal_crosses[index], i),
+                                  lv_color_hex(color), 0);
+    }
+}
+
+static void update_cal_crosses(void)
+{
+    for (uint8_t i = 0; i < 5; ++i) {
+        uint32_t color = (i < cal_step) ? 0x00FF00 : (i == cal_step) ? 0x00A0FF : 0xFFFFFF;
+        set_cross_color(i, color);
+    }
+    if (cal_step_label) {
+        char step_text[24];
+        snprintf(step_text, sizeof(step_text), "TIPPE: KREUZ %u/5",
+                 (unsigned)(cal_step < 5 ? cal_step + 1 : 5));
+        lv_label_set_text(cal_step_label, step_text);
+    }
+}
+
+static void make_cross(lv_obj_t *parent, const lv_point_t *pos, uint8_t index)
+{
+    lv_obj_t *cross = lv_obj_create(parent);
+    lv_obj_set_pos(cross, pos->x - 7, pos->y - 7);
+    lv_obj_set_size(cross, 14, 14);
+    lv_obj_clear_flag(cross, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_radius(cross, 0, 0);
+    lv_obj_set_style_bg_opa(cross, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(cross, 0, 0);
+    lv_obj_set_style_pad_all(cross, 0, 0);
+    lv_obj_t *h = lv_obj_create(cross);
+    lv_obj_set_pos(h, 0, 5);
+    lv_obj_set_size(h, 14, 3);
+    lv_obj_clear_flag(h, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_radius(h, 1, 0);
+    lv_obj_set_style_border_width(h, 0, 0);
+    lv_obj_set_style_pad_all(h, 0, 0);
+    lv_obj_set_style_bg_opa(h, LV_OPA_COVER, 0);
+    lv_obj_t *v = lv_obj_create(cross);
+    lv_obj_set_pos(v, 5, 0);
+    lv_obj_set_size(v, 3, 14);
+    lv_obj_clear_flag(v, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_radius(v, 1, 0);
+    lv_obj_set_style_border_width(v, 0, 0);
+    lv_obj_set_style_pad_all(v, 0, 0);
+    lv_obj_set_style_bg_opa(v, LV_OPA_COVER, 0);
+    cal_crosses[index] = cross;
+}
+
+static bool solve_linear3(float m[3][4], float out[3])
+{
+    for (int col = 0; col < 3; ++col) {
+        int pivot = col;
+        for (int row = col + 1; row < 3; ++row) {
+            if (fabsf(m[row][col]) > fabsf(m[pivot][col])) pivot = row;
+        }
+        if (fabsf(m[pivot][col]) < 1e-6f) return false;
+        if (pivot != col) {
+            for (int c = 0; c < 4; ++c) {
+                float tmp = m[col][c];
+                m[col][c] = m[pivot][c];
+                m[pivot][c] = tmp;
+            }
+        }
+        for (int row = 0; row < 3; ++row) {
+            if (row == col) continue;
+            float factor = m[row][col] / m[col][col];
+            for (int c = col; c < 4; ++c) {
+                m[row][c] -= factor * m[col][c];
+            }
+        }
+    }
+    for (int i = 0; i < 3; ++i) out[i] = m[i][3] / m[i][i];
+    return true;
+}
+
+static void compute_calibration(float params[6])
+{
+    float Sxx = 0.0f, Syy = 0.0f, Sxy = 0.0f, Sx = 0.0f, Sy = 0.0f;
+    float Txx = 0.0f, Tyx = 0.0f, Tx = 0.0f;
+    float Tyy = 0.0f, Txy = 0.0f, Ty = 0.0f;
+    for (int i = 0; i < 5; ++i) {
+        float rx = (float)cal_raw_x[i];
+        float ry = (float)cal_raw_y[i];
+        float tx = (float)cal_targets[i].x;
+        float ty = (float)cal_targets[i].y;
+        Sxx += rx * rx; Syy += ry * ry; Sxy += rx * ry;
+        Sx += rx; Sy += ry;
+        Txx += rx * tx; Tyx += ry * tx; Tx += tx;
+        Tyy += rx * ty; Txy += ry * ty; Ty += ty;
+    }
+    float mx[3][4] = {{Sxx, Sxy, Sx, Txx}, {Sxy, Syy, Sy, Tyx}, {Sx, Sy, 5.0f, Tx}};
+    float my[3][4] = {{Sxx, Sxy, Sx, Tyy}, {Sxy, Syy, Sy, Txy}, {Sx, Sy, 5.0f, Ty}};
+    float ox[3], oy[3];
+    if (!solve_linear3(mx, ox) || !solve_linear3(my, oy)) {
+        touch_calibration_load(params);
+        return;
+    }
+    params[0] = ox[0]; params[1] = ox[1]; params[2] = ox[2];
+    params[3] = oy[0]; params[4] = oy[1]; params[5] = oy[2];
+}
+
+static void calibration_tap_event(lv_event_t *event)
+{
+    lv_event_code_t code = lv_event_get_code(event);
+    if (code != LV_EVENT_RELEASED || cal_step >= 5) return;
+
+    lv_indev_t *indev = lv_indev_get_act();
+    if (indev == NULL) return;
+    lv_point_t point;
+    lv_indev_get_point(indev, &point);
+
+    cal_raw_x[cal_step] = (uint16_t)point.x;
+    cal_raw_y[cal_step] = (uint16_t)point.y;
+    cal_step++;
+    update_cal_crosses();
+    if (cal_step < 5) return;
+
+    float params[6];
+    compute_calibration(params);
+    esp_err_t err = touch_calibration_save(params);
+    touch_set_raw_mode(false);
+
+    if (err == ESP_OK) {
+        make_label(ui_Screen1, "KALIBRIERUNG GESPEICHERT", 10, 60,
+                   &lv_font_montserrat_16, 0x00FF00);
+    } else {
+        char msg[64];
+        snprintf(msg, sizeof(msg), "SPEICHERN FEHLGESCHLAGEN: %s", esp_err_to_name(err));
+        make_label(ui_Screen1, msg, 10, 60, &lv_font_montserrat_10, 0xFF0000);
+    }
+    lv_obj_t *done = make_button(ui_Screen1, "FERTIG", 113, 130, 94, 30,
+                                 0x00A0FF, settings_event, NULL);
+    lv_obj_set_style_radius(done, 5, 0);
+    lv_obj_set_style_shadow_width(done, 0, 0);
+}
+
+static void build_calibration_async(void *data)
+{
+    (void)data;
+    build_calibration_screen();
+}
+
+static void build_calibration_screen(void)
+{
+    stop_diagnostics_updates();
+    stop_pattern();
+    lesson_selected = false;
+    log_ui_memory("before calibration cleanup");
+    lv_obj_clean(ui_Screen1);
+    confirm_overlay = NULL;
+    timer_label = NULL;
+
+    cal_step = 0;
+    touch_set_raw_mode(true);
+
+    make_label(ui_Screen1, "TOUCH-KALIBRIERUNG", 10, 12,
+               &lv_font_montserrat_16, 0xFFFFFF);
+    cal_step_label = make_label(ui_Screen1, "TIPPE: KREUZ 1/5", 200, 13,
+                                &lv_font_montserrat_10, 0x00A0FF);
+
+    lv_obj_t *layer = lv_obj_create(ui_Screen1);
+    lv_obj_set_pos(layer, 0, 0);
+    lv_obj_set_size(layer, 320, 240);
+    lv_obj_clear_flag(layer, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(layer, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_radius(layer, 0, 0);
+    lv_obj_set_style_bg_opa(layer, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(layer, 0, 0);
+    lv_obj_set_style_pad_all(layer, 0, 0);
+    lv_obj_add_event_cb(layer, calibration_tap_event, LV_EVENT_ALL, NULL);
+
+    for (uint8_t i = 0; i < 5; ++i) {
+        make_cross(layer, &cal_targets[i], i);
+    }
+    update_cal_crosses();
+
+    make_label(ui_Screen1, "TIPPE NACHEINANDER AUF JEDES KREUZ.",
+               10, 224, &lv_font_montserrat_10, 0x808080);
+    log_ui_memory("calibration ready");
+}
+
+static void calibration_event(lv_event_t *event)
+{
+    (void)event;
+    queue_ui_action(build_calibration_async, "calibration screen");
 }
 
 static lv_obj_t *make_setting_row(lv_obj_t *parent, const char *title,
@@ -1281,28 +1420,27 @@ static lv_obj_t *make_setting_row(lv_obj_t *parent, const char *title,
 {
     lv_obj_t *row = lv_obj_create(parent);
     lv_obj_set_pos(row, 0, y);
-    lv_obj_set_size(row, 750, 54);
+    lv_obj_set_size(row, 300, 30);
     lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_style_radius(row, 0, 0);
     lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(row, 0, 0);
     lv_obj_set_style_pad_all(row, 0, 0);
 
-    make_label(row, title, 22, 5, &lv_font_montserrat_14, 0xDCE8F7);
-    make_label(row, description, 22, 28, &lv_font_montserrat_14, 0x8FA5C2);
+    make_label(row, title, 9, 2, &lv_font_montserrat_10, 0xFFFFFF);
+    make_label(row, description, 9, 16, &lv_font_montserrat_10, 0x808080);
 
     lv_obj_t *toggle = lv_switch_create(row);
-    remove_default_focus_outline(toggle);
-    lv_obj_set_pos(toggle, 664, 10);
-    lv_obj_set_size(toggle, 60, 34);
-    lv_obj_set_style_bg_color(toggle, lv_color_hex(0x26384B), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(toggle, lv_color_hex(0x1455B8),
+    lv_obj_set_pos(toggle, 266, 5);
+    lv_obj_set_size(toggle, 24, 14);
+    lv_obj_set_ext_click_area(toggle, 2);
+    lv_obj_set_style_bg_color(toggle, lv_color_hex(0x808080), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(toggle, lv_color_hex(0x00A0FF),
                               LV_PART_INDICATOR | LV_STATE_CHECKED);
-    lv_obj_set_style_bg_color(toggle, lv_color_hex(0xF4FAFF), LV_PART_KNOB);
+    lv_obj_set_style_bg_color(toggle, lv_color_hex(0xFFFFFF), LV_PART_KNOB);
     if (enabled) lv_obj_add_state(toggle, LV_STATE_CHECKED);
     lv_obj_add_event_cb(toggle, callback, LV_EVENT_VALUE_CHANGED, NULL);
-    lv_obj_add_event_cb(toggle, encoder_input_touch_event, LV_EVENT_PRESSED, NULL);
-    if (show_divider) make_divider(parent, 22, y + 55, 706);
+    if (show_divider) make_divider(parent, 9, y + 31, 282);
     return toggle;
 }
 
@@ -1323,16 +1461,14 @@ static void diagnostics_update(lv_timer_t *timer)
     uint64_t uptime_seconds = (uint64_t)esp_timer_get_time() / 1000000ULL;
     size_t minimum_heap = esp_get_minimum_free_heap_size();
     size_t internal_heap = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
-    size_t psram_heap = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
-    UBaseType_t stack_reserve = uxTaskGetStackHighWaterMark(NULL);
     lv_mem_monitor_t lv_memory;
     lv_mem_monitor(&lv_memory);
+    UBaseType_t stack_reserve = uxTaskGetStackHighWaterMark(NULL);
 
     lv_label_set_text_fmt(
         diagnostics_values_label,
         "%s (%d)\n"
         "%02llu:%02llu:%02llu\n"
-        "%lu KB\n"
         "%lu KB\n"
         "%lu KB\n"
         "%lu KB\n"
@@ -1343,7 +1479,6 @@ static void diagnostics_update(lv_timer_t *timer)
         (unsigned long long)((uptime_seconds / 60ULL) % 60ULL),
         (unsigned long long)(uptime_seconds % 60ULL),
         (unsigned long)(minimum_heap / 1024U), (unsigned long)(internal_heap / 1024U),
-        (unsigned long)(psram_heap / 1024U),
         (unsigned long)(lv_memory.free_size / 1024U), lv_memory.frag_pct,
         (unsigned long)stack_reserve);
 }
@@ -1363,20 +1498,13 @@ static void build_start_screen(void)
     lesson_cards_layer = NULL;
     confirm_overlay = NULL;
     timer_label = NULL;
-    page_default_focus = NULL;
-    lv_obj_t *brand_title = make_label(ui_Screen1, "ScopeBuddy", 67, 29,
-                                       &lv_font_montserrat_24, 0xF4FAFF);
-
-    lv_obj_t *brand_logo = lv_img_create(ui_Screen1);
-    lv_img_set_src(brand_logo, &ui_img_scopebuddy_logo);
-    lv_obj_set_pos(brand_logo, 25, 18);
-    (void)brand_title;
+    make_label(ui_Screen1, "Aiuto-Vista", 10, 12, &lv_font_montserrat_16, 0xFFFFFF);
     size_t page_count = lesson_page_count();
     if ((size_t)lesson_page >= page_count) lesson_page = 0;
 
     lesson_cards_layer = lv_obj_create(ui_Screen1);
     lv_obj_set_pos(lesson_cards_layer, 0, 0);
-    lv_obj_set_size(lesson_cards_layer, 800, 410);
+    lv_obj_set_size(lesson_cards_layer, 320, 204);
     lv_obj_clear_flag(lesson_cards_layer, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(lesson_cards_layer,
                     LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
@@ -1393,7 +1521,7 @@ static void build_start_screen(void)
         size_t lesson_index = first_lesson + card;
         const scope_lesson_definition_t *lesson = scopebuddy_lesson_at(lesson_index);
         if (lesson) {
-            make_mode_card(lesson_cards_layer, 25 + (int)card * LESSON_CARD_PITCH,
+            make_mode_card(lesson_cards_layer, 10 + (int)card * LESSON_CARD_PITCH,
                            lesson_index, lesson);
         }
     }
@@ -1408,45 +1536,43 @@ static void build_start_screen(void)
     } else {
         lesson_page_transition_pending = false;
     }
-    make_label(ui_Screen1, "CH1", 25, 438,
-               &lv_font_montserrat_14, 0x2684FF);
-    make_label(ui_Screen1, "GPIO48", 62, 438,
-               &lv_font_montserrat_14, 0xDCE8F7);
-    make_label(ui_Screen1, "CH2", 145, 438,
-               &lv_font_montserrat_14, 0x2684FF);
-    make_label(ui_Screen1, "GPIO47", 182, 438,
-               &lv_font_montserrat_14, 0xDCE8F7);
-    make_label(ui_Screen1, "GND", 265, 438,
-               &lv_font_montserrat_14, 0x2684FF);
-    make_label(ui_Screen1, "GEMEINSAM", 302, 438,
-               &lv_font_montserrat_14, 0xDCE8F7);
+    make_label(ui_Screen1, "CH1", 10, 222,
+               &lv_font_montserrat_10, 0x00A0FF);
+    make_label(ui_Screen1, "GPIO26", 31, 222,
+               &lv_font_montserrat_10, 0xFFFFFF);
+    make_label(ui_Screen1, "CH2", 98, 222,
+               &lv_font_montserrat_10, 0x00A0FF);
+    make_label(ui_Screen1, "GPIO27", 119, 222,
+               &lv_font_montserrat_10, 0xFFFFFF);
+    make_label(ui_Screen1, "GND", 170, 222,
+               &lv_font_montserrat_10, 0x00A0FF);
+    make_label(ui_Screen1, "JACK", 194, 222,
+               &lv_font_montserrat_10, 0xFFFFFF);
     char page_text[16];
     snprintf(page_text, sizeof(page_text), "%u / %u", lesson_page + 1U,
              (unsigned)page_count);
-    lv_obj_t *page_indicator = make_label(ui_Screen1, page_text, 635, 438,
-                                          &lv_font_montserrat_14, 0x8FA5C2);
-    lv_obj_set_width(page_indicator, 80);
+    lv_obj_t *page_indicator = make_label(ui_Screen1, page_text, 248, 212,
+                                          &lv_font_montserrat_10, 0x808080);
+    lv_obj_set_width(page_indicator, 40);
     lv_obj_set_style_text_align(page_indicator, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_t *previous = make_button(ui_Screen1, LV_SYMBOL_LEFT, 575, 420, 48, 38,
-                                     0x26384B, page_event, (void *)(intptr_t)-1);
-    lv_obj_t *next = make_button(ui_Screen1, LV_SYMBOL_RIGHT, 727, 420, 48, 38,
-                                 0x26384B, page_event, (void *)(intptr_t)1);
-    lv_obj_set_style_text_font(lv_obj_get_child(previous, 0), &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_font(lv_obj_get_child(next, 0), &lv_font_montserrat_24, 0);
+    lv_obj_t *previous = make_button(ui_Screen1, LV_SYMBOL_LEFT, 226, 206, 20, 26,
+                                     0x808080, page_event, (void *)(intptr_t)-1);
+    lv_obj_t *next = make_button(ui_Screen1, LV_SYMBOL_RIGHT, 290, 206, 20, 26,
+                                 0x808080, page_event, (void *)(intptr_t)1);
+    lv_obj_set_style_text_font(lv_obj_get_child(previous, 0), &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(lv_obj_get_child(next, 0), &lv_font_montserrat_16, 0);
 
     lv_obj_t *settings_button = lv_btn_create(ui_Screen1);
-    remove_default_focus_outline(settings_button);
-    lv_obj_set_pos(settings_button, 727, 20);
-    lv_obj_set_size(settings_button, 48, 42);
-    lv_obj_set_style_radius(settings_button, 8, 0);
-    lv_obj_set_style_bg_color(settings_button, lv_color_hex(0x14263A), 0);
-    lv_obj_set_style_border_color(settings_button, lv_color_hex(0x2684FF), 0);
+    lv_obj_set_pos(settings_button, 262, 6);
+    lv_obj_set_size(settings_button, 50, 26);
+    lv_obj_set_style_radius(settings_button, 4, 0);
+    lv_obj_set_style_bg_color(settings_button, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_border_color(settings_button, lv_color_hex(0x00A0FF), 0);
     lv_obj_set_style_border_width(settings_button, 1, 0);
     lv_obj_add_event_cb(settings_button, settings_event, LV_EVENT_RELEASED, NULL);
-    lv_obj_add_event_cb(settings_button, encoder_input_touch_event, LV_EVENT_PRESSED, NULL);
     lv_obj_t *settings_symbol = lv_label_create(settings_button);
     lv_label_set_text(settings_symbol, LV_SYMBOL_SETTINGS);
-    lv_obj_set_style_text_font(settings_symbol, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(settings_symbol, &lv_font_montserrat_16, 0);
     lv_obj_center(settings_symbol);
     log_ui_memory("start screen ready");
 }
@@ -1460,76 +1586,83 @@ static void build_settings_screen(void)
     lv_obj_clean(ui_Screen1);
     confirm_overlay = NULL;
     timer_label = NULL;
-    page_default_focus = NULL;
 
-    lv_obj_t *brand_logo = lv_img_create(ui_Screen1);
-    lv_img_set_src(brand_logo, &ui_img_scopebuddy_logo);
-    lv_obj_set_pos(brand_logo, 25, 18);
-    make_label(ui_Screen1, "ScopeBuddy", 67, 29, &lv_font_montserrat_24, 0xF4FAFF);
-    make_label(ui_Screen1, "EINSTELLUNGEN", 250, 32,
-               &lv_font_montserrat_14, 0x2684FF);
+    make_label(ui_Screen1, "Aiuto-Vista", 10, 12, &lv_font_montserrat_16, 0xFFFFFF);
+    make_label(ui_Screen1, "EINSTELLUNGEN", 100, 13,
+               &lv_font_montserrat_10, 0x00A0FF);
 
     lv_obj_t *home_button = lv_btn_create(ui_Screen1);
-    remove_default_focus_outline(home_button);
-    lv_obj_set_pos(home_button, 727, 20);
-    lv_obj_set_size(home_button, 48, 42);
-    lv_obj_set_style_radius(home_button, 8, 0);
-    lv_obj_set_style_bg_color(home_button, lv_color_hex(0x14263A), 0);
-    lv_obj_set_style_border_color(home_button, lv_color_hex(0x2684FF), 0);
+    lv_obj_set_pos(home_button, 262, 6);
+    lv_obj_set_size(home_button, 50, 26);
+    lv_obj_set_style_radius(home_button, 4, 0);
+    lv_obj_set_style_bg_color(home_button, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_border_color(home_button, lv_color_hex(0x00A0FF), 0);
     lv_obj_set_style_border_width(home_button, 1, 0);
     lv_obj_add_event_cb(home_button, settings_home_event, LV_EVENT_RELEASED, NULL);
-    lv_obj_add_event_cb(home_button, encoder_input_touch_event, LV_EVENT_PRESSED, NULL);
     lv_obj_t *home_symbol = lv_label_create(home_button);
     lv_label_set_text(home_symbol, LV_SYMBOL_HOME);
-    lv_obj_set_style_text_font(home_symbol, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(home_symbol, &lv_font_montserrat_16, 0);
     lv_obj_center(home_symbol);
 
     lv_obj_t *settings_panel = lv_obj_create(ui_Screen1);
-    lv_obj_set_pos(settings_panel, 25, UI_CONTENT_TOP);
-    lv_obj_set_size(settings_panel, 750, 286);
+    lv_obj_set_pos(settings_panel, 10, UI_CONTENT_TOP);
+    lv_obj_set_size(settings_panel, 300, 154);
     lv_obj_clear_flag(settings_panel, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_radius(settings_panel, 10, 0);
-    lv_obj_set_style_bg_color(settings_panel, lv_color_hex(0x0D1927), 0);
-    lv_obj_set_style_border_color(settings_panel, lv_color_hex(0x26384B), 0);
+    lv_obj_set_style_radius(settings_panel, 5, 0);
+    lv_obj_set_style_bg_color(settings_panel, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_border_color(settings_panel, lv_color_hex(0x808080), 0);
     lv_obj_set_style_border_width(settings_panel, 1, 0);
     lv_obj_set_style_pad_all(settings_panel, 0, 0);
 
-    make_setting_row(settings_panel, "TIMER EINBLENDEN",
-                     "Zeigt die verstrichene Zeit auf den Messaufgabenseiten.",
-                     4, setting_show_timer, true, timer_setting_event);
     make_setting_row(settings_panel, "WERTE DIREKT ANZEIGEN",
-                     "Zeigt alle Lösungswerte sofort und entfernt die Lösungsbuttons.",
-                     60, setting_reveal_values, true, values_setting_event);
+                     "Zeigt Lösungswerte sofort an.",
+                     5, setting_reveal_values, true, values_setting_event);
     make_setting_row(settings_panel, "AUTO-VORBEREITUNG",
-                     "Gibt vor jeder Messaufgabe ein Referenzsignal für AUTO aus.",
-                     116, setting_scope_reset, true, scope_reset_setting_event);
-    make_setting_row(settings_panel, "ENCODER AKTIVIEREN",
-                     "Aktiviert Drehsteuerung und weiße Auswahlkontur.",
-                     172, setting_encoder_enabled, true, encoder_setting_event);
+                     "Referenzsignal vor jeder Aufgabe.",
+                     43, setting_scope_reset, true, scope_reset_setting_event);
     make_setting_row(settings_panel, "ABBRUCH BESTÄTIGEN",
-                     "Fragt vor der Rückkehr aus einer laufenden Messreihe nach.",
-                     228, setting_confirm_home, false, confirm_home_setting_event);
+                     "Nachfrage vor Rückkehr zur Startseite.",
+                     81, setting_confirm_home, false, confirm_home_setting_event);
+
+    lv_obj_t *calibration_button = lv_btn_create(settings_panel);
+    lv_obj_set_pos(calibration_button, 0, 119);
+    lv_obj_set_size(calibration_button, 300, 30);
+    lv_obj_set_style_bg_color(calibration_button, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_radius(calibration_button, 0, 0);
+    lv_obj_set_style_border_width(calibration_button, 0, 0);
+    lv_obj_set_style_shadow_width(calibration_button, 0, 0);
+    lv_obj_set_style_pad_all(calibration_button, 0, 0);
+    lv_obj_add_event_cb(calibration_button, calibration_event, LV_EVENT_RELEASED, NULL);
+    make_label(calibration_button, "TOUCH-KALIBRIERUNG", 9, 2,
+               &lv_font_montserrat_10, 0xFFFFFF);
+    make_label(calibration_button, "Display auf Berührung abgleichen.", 9, 16,
+               &lv_font_montserrat_10, 0x808080);
+    lv_obj_t *cal_arrow = lv_label_create(calibration_button);
+    lv_label_set_text(cal_arrow, LV_SYMBOL_RIGHT);
+    lv_obj_set_pos(cal_arrow, 268, 3);
+    lv_obj_set_width(cal_arrow, 24);
+    lv_obj_set_style_text_font(cal_arrow, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(cal_arrow, lv_color_hex(0x00A0FF), 0);
+    lv_obj_set_style_text_align(cal_arrow, LV_TEXT_ALIGN_CENTER, 0);
 
     lv_obj_t *diagnostics_button = lv_btn_create(ui_Screen1);
-    remove_default_focus_outline(diagnostics_button);
-    lv_obj_set_pos(diagnostics_button, 25, 404);
-    lv_obj_set_size(diagnostics_button, 750, 54);
-    lv_obj_set_style_bg_color(diagnostics_button, lv_color_hex(0x0D1927), 0);
-    lv_obj_set_style_radius(diagnostics_button, 10, 0);
-    lv_obj_set_style_border_color(diagnostics_button, lv_color_hex(0x26384B), 0);
+    lv_obj_set_pos(diagnostics_button, 10, 206);
+    lv_obj_set_size(diagnostics_button, 300, 22);
+    lv_obj_set_style_bg_color(diagnostics_button, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_radius(diagnostics_button, 5, 0);
+    lv_obj_set_style_border_color(diagnostics_button, lv_color_hex(0x808080), 0);
     lv_obj_set_style_border_width(diagnostics_button, 1, 0);
     lv_obj_set_style_shadow_width(diagnostics_button, 0, 0);
     lv_obj_set_style_pad_all(diagnostics_button, 0, 0);
     lv_obj_add_event_cb(diagnostics_button, diagnostics_event, LV_EVENT_RELEASED, NULL);
-    lv_obj_add_event_cb(diagnostics_button, encoder_input_touch_event, LV_EVENT_PRESSED, NULL);
-    make_label(diagnostics_button, "DIAGNOSE", 22, 18,
-               &lv_font_montserrat_14, 0xDCE8F7);
+    make_label(diagnostics_button, "DIAGNOSE", 9, 4,
+               &lv_font_montserrat_10, 0xFFFFFF);
     lv_obj_t *diagnostics_arrow = lv_label_create(diagnostics_button);
     lv_label_set_text(diagnostics_arrow, LV_SYMBOL_RIGHT);
-    lv_obj_set_pos(diagnostics_arrow, 664, 12);
-    lv_obj_set_width(diagnostics_arrow, 60);
-    lv_obj_set_style_text_font(diagnostics_arrow, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(diagnostics_arrow, lv_color_hex(0x2684FF), 0);
+    lv_obj_set_pos(diagnostics_arrow, 266, 1);
+    lv_obj_set_width(diagnostics_arrow, 24);
+    lv_obj_set_style_text_font(diagnostics_arrow, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(diagnostics_arrow, lv_color_hex(0x00A0FF), 0);
     lv_obj_set_style_text_align(diagnostics_arrow, LV_TEXT_ALIGN_CENTER, 0);
     log_ui_memory("settings ready");
 }
@@ -1548,87 +1681,78 @@ static void build_diagnostics_screen(void)
     lv_obj_clean(ui_Screen1);
     confirm_overlay = NULL;
     timer_label = NULL;
-    page_default_focus = NULL;
 
-    lv_obj_t *brand_logo = lv_img_create(ui_Screen1);
-    lv_img_set_src(brand_logo, &ui_img_scopebuddy_logo);
-    lv_obj_set_pos(brand_logo, 25, 18);
-    make_label(ui_Screen1, "ScopeBuddy", 67, 29, &lv_font_montserrat_24, 0xF4FAFF);
-    make_label(ui_Screen1, "DIAGNOSE", 250, 32,
-               &lv_font_montserrat_14, 0x2684FF);
+    make_label(ui_Screen1, "Aiuto-Vista", 10, 12, &lv_font_montserrat_16, 0xFFFFFF);
+    make_label(ui_Screen1, "DIAGNOSE", 100, 13,
+               &lv_font_montserrat_10, 0x00A0FF);
 
     lv_obj_t *home_button = lv_btn_create(ui_Screen1);
-    remove_default_focus_outline(home_button);
-    lv_obj_set_pos(home_button, 727, 20);
-    lv_obj_set_size(home_button, 48, 42);
-    lv_obj_set_style_bg_color(home_button, lv_color_hex(0x14263A), 0);
-    lv_obj_set_style_radius(home_button, 8, 0);
-    lv_obj_set_style_border_color(home_button, lv_color_hex(0x2684FF), 0);
+    lv_obj_set_pos(home_button, 262, 6);
+    lv_obj_set_size(home_button, 50, 26);
+    lv_obj_set_style_bg_color(home_button, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_radius(home_button, 4, 0);
+    lv_obj_set_style_border_color(home_button, lv_color_hex(0x00A0FF), 0);
     lv_obj_set_style_border_width(home_button, 1, 0);
     lv_obj_add_event_cb(home_button, settings_home_event, LV_EVENT_RELEASED, NULL);
-    lv_obj_add_event_cb(home_button, encoder_input_touch_event, LV_EVENT_PRESSED, NULL);
     lv_obj_t *home_symbol = lv_label_create(home_button);
     lv_label_set_text(home_symbol, LV_SYMBOL_HOME);
-    lv_obj_set_style_text_font(home_symbol, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(home_symbol, &lv_font_montserrat_16, 0);
     lv_obj_center(home_symbol);
-    lv_obj_t *tests_button = make_button(ui_Screen1, "HARDWARETESTS", 565, 20, 145, 42,
-                                         0x1455B8, hardware_tests_open_event, NULL);
-    lv_obj_set_style_radius(tests_button, 8, 0);
+    lv_obj_t *tests_button = make_button(ui_Screen1, "TESTS", 222, 8, 46, 18,
+                                         0x00A0FF, hardware_tests_open_event, NULL);
+    lv_obj_set_style_radius(tests_button, 4, 0);
     lv_obj_t *software_card = lv_obj_create(ui_Screen1);
-    lv_obj_set_pos(software_card, 25, UI_CONTENT_TOP);
-    lv_obj_set_size(software_card, 350, 334);
+    lv_obj_set_pos(software_card, 10, UI_CONTENT_TOP);
+    lv_obj_set_size(software_card, 145, 180);
     lv_obj_clear_flag(software_card, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_radius(software_card, 10, 0);
-    lv_obj_set_style_bg_color(software_card, lv_color_hex(0x0D1927), 0);
-    lv_obj_set_style_border_color(software_card, lv_color_hex(0x26384B), 0);
+    lv_obj_set_style_radius(software_card, 5, 0);
+    lv_obj_set_style_bg_color(software_card, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_border_color(software_card, lv_color_hex(0x808080), 0);
     lv_obj_set_style_border_width(software_card, 1, 0);
     lv_obj_set_style_pad_all(software_card, 0, 0);
-    make_label(software_card, "SOFTWARE & HARDWARE", 20, 16,
-               &lv_font_montserrat_14, 0x2684FF);
-    make_divider(software_card, 20, 46, 310);
+    make_label(software_card, "SOFTWARE & HARDWARE", 8, 6,
+               &lv_font_montserrat_10, 0x00A0FF);
+    make_divider(software_card, 8, 18, 124);
 
     const esp_app_desc_t *app = esp_app_get_description();
     lv_obj_t *software_keys = make_label(
         software_card,
-        "Firmware:\nBuild:\nESP-IDF:\nTarget:\nAusgänge:\nCH1:\nCH2:\nEncoder CLK:\nEncoder DT:\nEncoder Taster:\nEncoder +:\nEncoder GND:",
-        20, 62, &lv_font_montserrat_14, 0x8FA5C2);
-    lv_obj_set_style_text_line_space(software_keys, 4, 0);
-    char software_text[256];
+        "Firmware:\nESP-IDF:\nTarget:\nAusgänge:\nCH1:\nCH2:",
+        8, 25, &lv_font_montserrat_10, 0x808080);
+    lv_obj_set_style_text_line_space(software_keys, 3, 0);
+    char software_text[128];
     snprintf(software_text, sizeof(software_text),
-             "%s\n%s %s\n%s\n%s\n%s\nGPIO48\nGPIO47\nGPIO%d\nGPIO%d\nGPIO%d\n3V3\nGND",
-             SCOPEBUDDY_FIRMWARE_VERSION, app->date, app->time, app->idf_ver,
-             CONFIG_IDF_TARGET, hardware_ready ? "bereit" : "nicht bereit",
-             ENCODER_GPIO_CLK, ENCODER_GPIO_DT, ENCODER_GPIO_SW);
-    lv_obj_t *software_values = make_label(software_card, software_text, 145, 62,
-                                            &lv_font_montserrat_14, 0xDCE8F7);
-    lv_obj_set_style_text_line_space(software_values, 4, 0);
+             "%s\n%s\n%s\n%s\nGPIO26\nGPIO27",
+             AIUTO_VISTA_FIRMWARE_VERSION, app->idf_ver,
+             CONFIG_IDF_TARGET, hardware_ready ? "bereit" : "nicht bereit");
+    lv_obj_t *software_values = make_label(software_card, software_text, 58, 25,
+                                            &lv_font_montserrat_10, 0xFFFFFF);
+    lv_obj_set_style_text_line_space(software_values, 3, 0);
 
     lv_obj_t *status_card = lv_obj_create(ui_Screen1);
-    lv_obj_set_pos(status_card, 390, UI_CONTENT_TOP);
-    lv_obj_set_size(status_card, 385, 334);
+    lv_obj_set_pos(status_card, 165, UI_CONTENT_TOP);
+    lv_obj_set_size(status_card, 145, 180);
     lv_obj_clear_flag(status_card, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_radius(status_card, 10, 0);
-    lv_obj_set_style_bg_color(status_card, lv_color_hex(0x0D1927), 0);
-    lv_obj_set_style_border_color(status_card, lv_color_hex(0x26384B), 0);
+    lv_obj_set_style_radius(status_card, 5, 0);
+    lv_obj_set_style_bg_color(status_card, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_border_color(status_card, lv_color_hex(0x808080), 0);
     lv_obj_set_style_border_width(status_card, 1, 0);
     lv_obj_set_style_pad_all(status_card, 0, 0);
-    make_label(status_card, "LAUFZEIT & SPEICHER", 20, 16,
-               &lv_font_montserrat_14, 0x2684FF);
-    make_divider(status_card, 20, 46, 345);
+    make_label(status_card, "LAUFZEIT & SPEICHER", 8, 6,
+               &lv_font_montserrat_10, 0x00A0FF);
+    make_divider(status_card, 8, 18, 124);
     lv_obj_t *status_keys = make_label(
         status_card,
-        "Resetgrund:\nLaufzeit:\nHeap-Minimum:\nIntern frei:\nPSRAM frei:\nLVGL frei:\nLVGL fragmentiert:\nUI-Stackreserve:",
-        20, 62, &lv_font_montserrat_14, 0x8FA5C2);
-    lv_obj_set_style_text_line_space(status_keys, 10, 0);
-    diagnostics_values_label = make_label(status_card, "", 165, 62,
-                                           &lv_font_montserrat_14, 0xDCE8F7);
-    lv_obj_set_style_text_line_space(diagnostics_values_label, 10, 0);
+        "Resetgrund:\nLaufzeit:\nHeap min:\nIntern:\nLVGL frei:\nFragmentiert:\nStack:",
+        8, 25, &lv_font_montserrat_10, 0x808080);
+    lv_obj_set_style_text_line_space(status_keys, 4, 0);
+    diagnostics_values_label = make_label(status_card, "", 70, 25,
+                                           &lv_font_montserrat_10, 0xFFFFFF);
+    lv_obj_set_width(diagnostics_values_label, 68);
+    lv_obj_set_style_text_line_space(diagnostics_values_label, 4, 0);
     diagnostics_update(NULL);
     diagnostics_timer = lv_timer_create(diagnostics_update, 1000, NULL);
     if (!diagnostics_timer) ESP_LOGE(UI_TAG, "Creating diagnostics timer failed");
-
-    lv_group_t *encoder_group = lv_group_get_default();
-    if (encoder_group) lv_group_focus_obj(home_button);
     log_ui_memory("diagnostics ready");
 }
 
@@ -1638,26 +1762,26 @@ static lv_obj_t *make_hardware_test_card(int x, const char *title, const char *d
 {
     lv_obj_t *card = lv_obj_create(ui_Screen1);
     lv_obj_set_pos(card, x, UI_CONTENT_TOP);
-    lv_obj_set_size(card, 350, 334);
+    lv_obj_set_size(card, 145, 180);
     lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_radius(card, 10, 0);
-    lv_obj_set_style_bg_color(card, lv_color_hex(0x0D1927), 0);
-    lv_obj_set_style_border_color(card, lv_color_hex(0x26384B), 0);
+    lv_obj_set_style_radius(card, 5, 0);
+    lv_obj_set_style_bg_color(card, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_border_color(card, lv_color_hex(0x808080), 0);
     lv_obj_set_style_border_width(card, 1, 0);
     lv_obj_set_style_pad_all(card, 0, 0);
 
-    make_label(card, title, 20, 16, &lv_font_montserrat_14, 0x2684FF);
-    make_divider(card, 20, 46, 310);
-    lv_obj_t *description_label = make_label(card, description, 20, 62,
-                                             &lv_font_montserrat_14, 0xAFC2DC);
-    lv_obj_set_width(description_label, 310);
-    lv_obj_set_style_text_line_space(description_label, 7, 0);
+    make_label(card, title, 8, 6, &lv_font_montserrat_10, 0x00A0FF);
+    make_divider(card, 8, 18, 124);
+    lv_obj_t *description_label = make_label(card, description, 8, 25,
+                                             &lv_font_montserrat_10, 0x808080);
+    lv_obj_set_width(description_label, 124);
+    lv_obj_set_style_text_line_space(description_label, 3, 0);
 
-    *status_label = make_label(card, "GESTOPPT", 20, 220,
-                               &lv_font_montserrat_14, 0x8FA5C2);
-    lv_obj_set_width(*status_label, 310);
-    lv_obj_t *action_button = make_button(card, "TEST STARTEN", 20, 260, 310, 52,
-                                          0x1455B8, toggle_event, NULL);
+    *status_label = make_label(card, "GESTOPPT", 8, 130,
+                               &lv_font_montserrat_10, 0x808080);
+    lv_obj_set_width(*status_label, 124);
+    lv_obj_t *action_button = make_button(card, "TEST STARTEN", 8, 148, 124, 21,
+                                          0x00A0FF, toggle_event, NULL);
     *action_label = lv_obj_get_child(action_button, 0);
     return action_button;
 }
@@ -1672,38 +1796,30 @@ static void build_hardware_tests_screen(void)
     lv_obj_clean(ui_Screen1);
     confirm_overlay = NULL;
     timer_label = NULL;
-    page_default_focus = NULL;
 
-    lv_obj_t *brand_logo = lv_img_create(ui_Screen1);
-    lv_img_set_src(brand_logo, &ui_img_scopebuddy_logo);
-    lv_obj_set_pos(brand_logo, 25, 18);
-    make_label(ui_Screen1, "ScopeBuddy", 67, 29, &lv_font_montserrat_24, 0xF4FAFF);
-    make_label(ui_Screen1, "HARDWARETESTS", 250, 32,
-               &lv_font_montserrat_14, 0x2684FF);
+    make_label(ui_Screen1, "Aiuto-Vista", 10, 12, &lv_font_montserrat_16, 0xFFFFFF);
+    make_label(ui_Screen1, "HARDWARETESTS", 100, 13,
+               &lv_font_montserrat_10, 0x00A0FF);
 
-    lv_obj_t *back_button = make_button(ui_Screen1, LV_SYMBOL_LEFT, 727, 20, 48, 42,
-                                        0x14263A, hardware_tests_back_event, NULL);
-    lv_obj_set_style_radius(back_button, 8, 0);
-    lv_obj_set_style_text_font(lv_obj_get_child(back_button, 0), &lv_font_montserrat_24, 0);
+    lv_obj_t *back_button = make_button(ui_Screen1, LV_SYMBOL_LEFT, 262, 6, 50, 26,
+                                        0x000000, hardware_tests_back_event, NULL);
+    lv_obj_set_style_radius(back_button, 4, 0);
+    lv_obj_set_style_text_font(lv_obj_get_child(back_button, 0), &lv_font_montserrat_16, 0);
     lv_obj_t *single_action_button = make_hardware_test_card(
-        25, "1-KANAL-TEST",
-        "CH1 / GPIO48\n"
+        10, "1-KANAL-TEST",
+        "CH1 / GPIO26\n"
         "1 kHz, 50 % Tastgrad\n"
-        "Pegel: ungefähr 0 bis 3,3 V\n"
-        "Tastkopf gegen Board-GND anschließen.\n"
-        "Nach dem Stoppen ist GPIO48 dauerhaft LOW.",
+        "0 bis 3,3 V gegen GND.\n"
+        "Nach Stopp: GPIO26 LOW.",
         &single_test_status_label, &single_test_action_label, single_test_toggle_event);
     make_hardware_test_card(
-        390, "2-KANAL-TEST",
-        "CH1 / GPIO48: 1 kHz, 50 % Tastgrad\n"
-        "CH2 / GPIO47: 1 kHz, 50 % Tastgrad\n"
-        "Versatz CH1 zu CH2: 100 µs\n"
-        "Beide Tastköpfe gegen denselben Board-GND anschließen.",
+        165, "2-KANAL-TEST",
+        "CH1 / GPIO26: 1 kHz\n"
+        "CH2 / GPIO27: 1 kHz\n"
+        "Versatz: 100 µs\n"
+        "Beide gegen denselben GND.",
         &sync_test_status_label, &sync_test_action_label, sync_test_toggle_event);
-    page_default_focus = single_action_button;
-
-    lv_group_t *encoder_group = lv_group_get_default();
-    if (encoder_group) lv_group_focus_obj(single_action_button);
+    (void)single_action_button;
     log_ui_memory("hardware tests ready");
 }
 
@@ -1713,66 +1829,56 @@ static void build_scope_reset_screen(void)
     lv_obj_clean(ui_Screen1);
     confirm_overlay = NULL;
     timer_label = NULL;
-    page_default_focus = NULL;
 
-    lv_obj_t *brand_logo = lv_img_create(ui_Screen1);
-    lv_img_set_src(brand_logo, &ui_img_scopebuddy_logo);
-    lv_obj_set_pos(brand_logo, 25, 18);
-    make_label(ui_Screen1, "ScopeBuddy", 67, 29, &lv_font_montserrat_24, 0xF4FAFF);
+    make_label(ui_Screen1, "Aiuto-Vista", 10, 12, &lv_font_montserrat_16, 0xFFFFFF);
 
-    char heading[80];
-    snprintf(heading, sizeof(heading), "AUFGABE %lu", (unsigned long)question_number);
-    make_label(ui_Screen1, heading, 250, 32, &lv_font_montserrat_14, 0x2684FF);
-    lv_obj_t *mode_label = make_label(ui_Screen1, mode_name(), 460, 32,
-                                      &lv_font_montserrat_14, 0x8FA5C2);
-    lv_obj_set_width(mode_label, 240);
-    lv_label_set_long_mode(mode_label, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_align(mode_label, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_t *task_label = make_label(ui_Screen1, mode_name(), 0, 13,
+                                      &lv_font_montserrat_10, 0x00A0FF);
+    lv_obj_align(task_label, LV_ALIGN_TOP_MID, 0, 13);
+    lv_obj_set_width(task_label, 150);
+    lv_label_set_long_mode(task_label, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_align(task_label, LV_TEXT_ALIGN_CENTER, 0);
 
     lv_obj_t *home_button = lv_btn_create(ui_Screen1);
-    remove_default_focus_outline(home_button);
-    lv_obj_set_pos(home_button, 727, 20);
-    lv_obj_set_size(home_button, 48, 42);
-    lv_obj_set_style_radius(home_button, 8, 0);
-    lv_obj_set_style_bg_color(home_button, lv_color_hex(0x14263A), 0);
-    lv_obj_set_style_border_color(home_button, lv_color_hex(0x2684FF), 0);
+    lv_obj_set_pos(home_button, 262, 6);
+    lv_obj_set_size(home_button, 50, 26);
+    lv_obj_set_style_radius(home_button, 4, 0);
+    lv_obj_set_style_bg_color(home_button, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_border_color(home_button, lv_color_hex(0x00A0FF), 0);
     lv_obj_set_style_border_width(home_button, 1, 0);
     lv_obj_add_event_cb(home_button, home_event, LV_EVENT_RELEASED, NULL);
-    lv_obj_add_event_cb(home_button, encoder_input_touch_event, LV_EVENT_PRESSED, NULL);
     lv_obj_t *home_symbol = lv_label_create(home_button);
     lv_label_set_text(home_symbol, LV_SYMBOL_HOME);
-    lv_obj_set_style_text_font(home_symbol, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(home_symbol, &lv_font_montserrat_16, 0);
     lv_obj_center(home_symbol);
 
     lv_obj_t *card = lv_obj_create(ui_Screen1);
-    lv_obj_set_pos(card, 80, 130);
-    lv_obj_set_size(card, 640, 270);
+    lv_obj_set_pos(card, 20, 52);
+    lv_obj_set_size(card, 280, 170);
     lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_radius(card, 12, 0);
-    lv_obj_set_style_bg_color(card, lv_color_hex(0x0D1927), 0);
-    lv_obj_set_style_border_color(card, lv_color_hex(0x26384B), 0);
+    lv_obj_set_style_radius(card, 6, 0);
+    lv_obj_set_style_bg_color(card, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_border_color(card, lv_color_hex(0x808080), 0);
     lv_obj_set_style_border_width(card, 1, 0);
     lv_obj_set_style_pad_all(card, 0, 0);
 
-    make_label(card, "AUTO-VORBEREITUNG", 32, 28,
-               &lv_font_montserrat_24, 0xF4FAFF);
+    make_label(card, "AUTO-VORBEREITUNG", 13, 11,
+               &lv_font_montserrat_16, 0xFFFFFF);
     const char *auto_instruction = challenge.lesson && challenge.lesson->required_channels == 2 ?
-        "Aktiviere CH1 und CH2 mit gleicher Skalierung, triggere auf CH1\n"
-        "und drücke dann AUTO am Oszilloskop." :
-        "Drücke jetzt den AUTO-Button am Oszilloskop,\n"
-        "um die Ansicht für die Messung vorzubereiten.";
+        "Aktiviere CH1 und CH2 gleich\n"
+        "skaliert, triggere auf CH1,\n"
+        "dann AUTO am Oszilloskop." :
+        "Drücke jetzt AUTO am\n"
+        "Oszilloskop, um die Ansicht\n"
+        "für die Messung vorzubereiten.";
     lv_obj_t *instruction = make_label(
         card, auto_instruction,
-        32, 88, &lv_font_montserrat_14, 0xAFC2DC);
-    lv_obj_set_style_text_line_space(instruction, 8, 0);
+        13, 45, &lv_font_montserrat_10, 0x808080);
+    lv_obj_set_style_text_line_space(instruction, 3, 0);
 
-    lv_obj_t *button = make_button(card, "ZUR MESSAUFGABE", 350, 182, 258, 58,
-                                   0x1455B8, begin_question_event, NULL);
-    lv_obj_set_style_radius(button, 9, 0);
-    page_default_focus = button;
-
-    lv_group_t *encoder_group = lv_group_get_default();
-    if (encoder_group) lv_group_focus_obj(button);
+    lv_obj_t *button = make_button(card, "ZUR MESSAUFGABE", 140, 136, 103, 23,
+                                   0x00A0FF, begin_question_event, NULL);
+    lv_obj_set_style_radius(button, 5, 0);
 
     log_ui_memory("reset page ready");
     if (hardware_ready) start_scope_reset_signal();
@@ -1783,12 +1889,10 @@ static void build_question_screen(void)
     log_ui_memory("before question cleanup");
     lv_obj_clean(ui_Screen1);
     timer_label = NULL;
-    page_default_focus = NULL;
     action_button = NULL;
     action_label = NULL;
     all_values_button = NULL;
     all_values_label = NULL;
-    advance_button = NULL;
     for (uint8_t i = 0; i < SCOPEBUDDY_MAX_MEASUREMENTS; ++i) {
         measurement_values[i] = NULL;
         measurement_boxes[i] = NULL;
@@ -1800,121 +1904,106 @@ static void build_question_screen(void)
     char heading[80];
     snprintf(heading, sizeof(heading), "AUFGABE %lu", (unsigned long)question_number);
     lv_obj_t *home_button = lv_btn_create(ui_Screen1);
-    remove_default_focus_outline(home_button);
-    lv_obj_set_pos(home_button, 727, 20);
-    lv_obj_set_size(home_button, 48, 42);
-    lv_obj_set_style_radius(home_button, 8, 0);
-    lv_obj_set_style_bg_color(home_button, lv_color_hex(0x14263A), 0);
-    lv_obj_set_style_border_color(home_button, lv_color_hex(0x2684FF), 0);
+    lv_obj_set_pos(home_button, 262, 6);
+    lv_obj_set_size(home_button, 50, 26);
+    lv_obj_set_style_radius(home_button, 4, 0);
+    lv_obj_set_style_bg_color(home_button, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_border_color(home_button, lv_color_hex(0x00A0FF), 0);
     lv_obj_set_style_border_width(home_button, 1, 0);
     lv_obj_add_event_cb(home_button, home_event, LV_EVENT_RELEASED, NULL);
-    lv_obj_add_event_cb(home_button, encoder_input_touch_event, LV_EVENT_PRESSED, NULL);
     lv_obj_t *home_symbol = lv_label_create(home_button);
     lv_label_set_text(home_symbol, LV_SYMBOL_HOME);
-    lv_obj_set_style_text_font(home_symbol, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(home_symbol, &lv_font_montserrat_16, 0);
     lv_obj_center(home_symbol);
 
-    lv_obj_t *brand_logo = lv_img_create(ui_Screen1);
-    lv_img_set_src(brand_logo, &ui_img_scopebuddy_logo);
-    lv_obj_set_pos(brand_logo, 25, 18);
-    make_label(ui_Screen1, "ScopeBuddy", 67, 29, &lv_font_montserrat_24, 0xF4FAFF);
-    make_label(ui_Screen1, heading, 250, 32, &lv_font_montserrat_14, 0x2684FF);
-    int mode_x = setting_show_timer ? 400 : 460;
-    int mode_width = setting_show_timer ? 210 : 240;
-    lv_obj_t *mode_label = make_label(ui_Screen1, mode_name(), mode_x, 32,
-                                      &lv_font_montserrat_14, 0x8FA5C2);
-    lv_obj_set_width(mode_label, mode_width);
-    lv_label_set_long_mode(mode_label, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_align(mode_label, LV_TEXT_ALIGN_RIGHT, 0);
-    if (setting_show_timer) {
-        timer_label = make_label(ui_Screen1, "00:00", 630, 32,
-                                 &lv_font_montserrat_14, 0xDCE8F7);
-    }
+    make_label(ui_Screen1, heading, 10, 13, &lv_font_montserrat_10, 0x00A0FF);
+    lv_obj_t *task_label = make_label(ui_Screen1, mode_name(), 0, 13,
+                                      &lv_font_montserrat_10, 0x808080);
+    lv_obj_align(task_label, LV_ALIGN_TOP_MID, 0, 13);
+    lv_obj_set_width(task_label, 150);
+    lv_label_set_long_mode(task_label, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_align(task_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_t *setup_card = lv_obj_create(ui_Screen1);
-    lv_obj_set_pos(setup_card, 25, UI_CONTENT_TOP);
-    lv_obj_set_size(setup_card, 330, 234);
+    lv_obj_set_pos(setup_card, 10, UI_CONTENT_TOP);
+    lv_obj_set_size(setup_card, 145, 162);
     lv_obj_clear_flag(setup_card, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_radius(setup_card, 10, 0);
-    lv_obj_set_style_bg_color(setup_card, lv_color_hex(0x0D1927), 0);
-    lv_obj_set_style_border_color(setup_card, lv_color_hex(0x26384B), 0);
-    lv_obj_set_style_border_width(setup_card, 1, 0);
+    lv_obj_set_style_radius(setup_card, 0, 0);
+    lv_obj_set_style_bg_opa(setup_card, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(setup_card, 0, 0);
     lv_obj_set_style_pad_all(setup_card, 0, 0);
-    make_label(setup_card, "MESSAUFBAU", 18, 14,
-               &lv_font_montserrat_14, 0x2684FF);
-    make_divider(setup_card, 18, 43, 294);
+    make_label(setup_card, "MESSAUFBAU", 10, 6,
+               &lv_font_montserrat_10, 0x00A0FF);
 
     const char *setup_texts[] = {
         challenge.context,
         challenge.lesson->connection_hint,
         challenge.lesson->trigger_hint,
     };
-    const uint32_t setup_colors[] = { 0x8FA5C2, 0x18B8C9, 0xE6B43C };
-    int setup_y = 55;
+    const uint32_t setup_colors[] = { 0x808080, 0x00FFFF, 0xFFFF00 };
+    int setup_y = 22;
     for (size_t i = 0; i < 3U; ++i) {
-        lv_obj_t *text = make_label(setup_card, setup_texts[i], 18, setup_y,
-                                    &lv_font_montserrat_14, setup_colors[i]);
-        lv_obj_set_width(text, 294);
-        lv_obj_set_style_text_line_space(text, 2, 0);
+        lv_obj_t *text = make_label(setup_card, setup_texts[i], 10, setup_y,
+                                    &lv_font_montserrat_10, setup_colors[i]);
+        lv_obj_set_width(text, 135);
+        lv_obj_set_style_text_line_space(text, 1, 0);
         lv_obj_update_layout(text);
-        setup_y += lv_obj_get_height(text) + 8;
-        if (i < 2U) {
-            make_divider(setup_card, 18, setup_y - 4, 294);
-            setup_y += 4;
-        }
+        setup_y += lv_obj_get_height(text) + 4;
     }
 
+    lv_obj_t *separator_l = lv_obj_create(ui_Screen1);
+    lv_obj_set_pos(separator_l, 158, UI_CONTENT_TOP);
+    lv_obj_set_size(separator_l, 1, 162);
+    lv_obj_clear_flag(separator_l, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_color(separator_l, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_border_width(separator_l, 0, 0);
+    lv_obj_t *separator_r = lv_obj_create(ui_Screen1);
+    lv_obj_set_pos(separator_r, 162, UI_CONTENT_TOP);
+    lv_obj_set_size(separator_r, 1, 162);
+    lv_obj_clear_flag(separator_r, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_color(separator_r, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_border_width(separator_r, 0, 0);
+
     lv_obj_t *measurements_card = lv_obj_create(ui_Screen1);
-    lv_obj_set_pos(measurements_card, 370, UI_CONTENT_TOP);
-    lv_obj_set_size(measurements_card, 405, 234);
+    lv_obj_set_pos(measurements_card, 165, UI_CONTENT_TOP);
+    lv_obj_set_size(measurements_card, 145, 162);
     lv_obj_clear_flag(measurements_card, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_radius(measurements_card, 10, 0);
-    lv_obj_set_style_bg_color(measurements_card, lv_color_hex(0x0D1927), 0);
-    lv_obj_set_style_border_color(measurements_card, lv_color_hex(0x26384B), 0);
-    lv_obj_set_style_border_width(measurements_card, 1, 0);
+    lv_obj_set_style_radius(measurements_card, 0, 0);
+    lv_obj_set_style_bg_opa(measurements_card, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(measurements_card, 0, 0);
     lv_obj_set_style_pad_all(measurements_card, 0, 0);
-    make_label(measurements_card, "MESSWERTE", 18, 14,
-               &lv_font_montserrat_14, 0x2684FF);
-    make_divider(measurements_card, 18, 43, 369);
+    make_label(measurements_card, "MESSWERTE", 7, 6,
+               &lv_font_montserrat_10, 0x00A0FF);
     for (uint8_t i = 0; i < challenge.measurement_count; ++i) {
-        make_measurement_item(measurements_card, &challenge.measurements[i], 58 + i * 57, i);
-        if (i + 1U < challenge.measurement_count) {
-            make_divider(measurements_card, 18, 103 + i * 57, 369);
-        }
+        make_measurement_item(measurements_card, &challenge.measurements[i], 23 + i * 40, i);
     }
 
     if (!setting_reveal_values) {
-        all_values_button = make_button(ui_Screen1, "ALLE WERTE\nANZEIGEN", 25, 386, 235, 56,
-                                        0x1455B8, solve_all_event, NULL);
-        lv_obj_set_style_radius(all_values_button, 9, 0);
+        all_values_button = make_button(ui_Screen1, "ALLE WERTE\nANZEIGEN", 10, 210, 94, 24,
+                                        0x00A0FF, solve_all_event, NULL);
+        lv_obj_set_style_radius(all_values_button, 5, 0);
         lv_obj_set_style_bg_opa(all_values_button, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_color(all_values_button, lv_color_hex(0x2684FF), 0);
+        lv_obj_set_style_border_color(all_values_button, lv_color_hex(0x00A0FF), 0);
         lv_obj_set_style_border_width(all_values_button, 2, 0);
         lv_obj_set_style_shadow_width(all_values_button, 0, 0);
         all_values_label = lv_obj_get_child(all_values_button, 0);
-        lv_obj_set_style_text_color(all_values_label, lv_color_hex(0xDCE8F7), 0);
-        action_button = make_button(ui_Screen1, "AUSGEWÄHLTE WERTE\nANZEIGEN", 282, 386, 235, 56,
-                                    0x1455B8, solve_event, NULL);
-        lv_obj_set_style_radius(action_button, 9, 0);
+        lv_obj_set_style_text_color(all_values_label, lv_color_hex(0xFFFFFF), 0);
+        action_button = make_button(ui_Screen1, "AUSGEWÄHLTE WERTE\nANZEIGEN", 113, 210, 94, 24,
+                                    0x00A0FF, solve_event, NULL);
+        lv_obj_set_style_radius(action_button, 5, 0);
         lv_obj_set_style_bg_opa(action_button, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_color(action_button, lv_color_hex(0x2684FF), 0);
+        lv_obj_set_style_border_color(action_button, lv_color_hex(0x00A0FF), 0);
         lv_obj_set_style_border_width(action_button, 2, 0);
         lv_obj_set_style_shadow_width(action_button, 0, 0);
         action_label = lv_obj_get_child(action_button, 0);
-        lv_obj_set_style_text_color(action_label, lv_color_hex(0xDCE8F7), 0);
+        lv_obj_set_style_text_color(action_label, lv_color_hex(0xFFFFFF), 0);
         lv_obj_add_state(action_button, LV_STATE_DISABLED);
-        lv_obj_set_style_border_color(action_button, lv_color_hex(0x34465A), LV_STATE_DISABLED);
-        lv_obj_set_style_text_color(action_label, lv_color_hex(0x607895), LV_STATE_DISABLED);
+        lv_obj_set_style_border_color(action_button, lv_color_hex(0x404040), LV_STATE_DISABLED);
+        lv_obj_set_style_text_color(action_label, lv_color_hex(0x808080), LV_STATE_DISABLED);
         update_solution_buttons();
     }
-    advance_button = make_button(ui_Screen1, "NÄCHSTE\nMESSAUFGABE",
-                                 539, 386, 236, 56, 0x1455B8, advance_event, NULL);
-    lv_obj_set_style_radius(advance_button, 9, 0);
-
-    lv_group_t *encoder_group = lv_group_get_default();
-    if (encoder_group) {
-        page_default_focus = all_values_button ? all_values_button : advance_button;
-        lv_group_focus_obj(page_default_focus);
-    }
+    lv_obj_t *advance_button = make_button(ui_Screen1, "NÄCHSTE\nMESSAUFGABE",
+                                           216, 210, 94, 24, 0x00A0FF, advance_event, NULL);
+    lv_obj_set_style_radius(advance_button, 5, 0);
 
     log_ui_memory("question ready");
     if (hardware_ready) start_challenge_signal();
@@ -1943,12 +2032,12 @@ void WaveHardwareReady(bool ready)
 void LedOn(lv_event_t *e)
 {
     (void)e;
-    log_operation_error("Starting GPIO48 output", gpio_wave_start());
+    log_operation_error("Starting GPIO26 output", gpio_wave_start());
 }
 void LedOff(lv_event_t *e)
 {
     (void)e;
-    log_operation_error("Stopping GPIO48 output", gpio_wave_stop());
+    log_operation_error("Stopping GPIO26 output", gpio_wave_stop());
 }
 void WaveFrequencyChanged(lv_event_t *e) { (void)e; }
 void WaveDutyChanged(lv_event_t *e) { (void)e; }

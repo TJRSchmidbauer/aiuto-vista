@@ -1,7 +1,8 @@
-// main.c
+// main.c — Aiuto-Vista firmware entry point.
+// Fork of ScopeBuddy (https://github.com/johannesboernsen/ScopeBuddy).
+// Target hardware: Cheap Yellow Display ESP32-2432S028 (ESP32-WROOM-32).
 #include "main.h"
 #include "ui.h"
-#include "encoder_input.h"
 #include "esp_system.h"
 #include "nvs_flash.h"
 
@@ -46,38 +47,24 @@ static void init_fail_handler(const char *module_name, esp_err_t err) {
 static void system_init(void) {
     esp_err_t err = ESP_OK;
 
-    // 1. Initialize I2C (required for touch chip)
-    MAIN_INFO("Initializing I2C...");
-    err = i2c_init();
-    if (err != ESP_OK) init_fail_handler("I2C", err);
-    MAIN_INFO("I2C init success");
-
-    vTaskDelay(200 / portTICK_PERIOD_MS);
-
-    // 2. Initialize stc8 
-    err = stc8_i2c_init();
-    if (err != ESP_OK)
-        init_fail_handler("stc8h1kxx", err);
-    MAIN_INFO("stc8 init success");  // Print success log
-
-    // 3. Initialize touch panel (low-level driver)
+    // 1. Initialize touch panel (low-level driver)
     MAIN_INFO("Initializing touch panel...");
     err = touch_init();
     if (err != ESP_OK) init_fail_handler("Touch", err);
     MAIN_INFO("Touch panel init success");
 
-    // 4. Initialize LCD hardware and LVGL (must initialize before turning on backlight)
+    // 2. Initialize LCD hardware and LVGL (must initialize before turning on backlight)
     err = display_init();
     if (err != ESP_OK) init_fail_handler("LCD", err);
     MAIN_INFO("LCD init success");
 
-    // 5. Turn on LCD backlight (brightness set to 100 = max)
+    // 3. Turn on LCD backlight (brightness set to 100 = max)
     err = set_lcd_blight(100);
     if (err != ESP_OK) init_fail_handler("LCD Backlight", err);
     MAIN_INFO("LCD backlight opened (brightness: 100)");
 
-    // 6. Initialize hardware PWM on GPIO48, initially stopped
-    MAIN_INFO("Initializing GPIO48 waveform generator...");
+    // 4. Initialize the waveform generator on GPIO26, initially stopped
+    MAIN_INFO("Initializing GPIO26 waveform generator...");
     err = gpio_wave_init(1000, 50);
     if (err == ESP_OK) err = gpio_wave_stop();
     wave_hardware_ready = (err == ESP_OK);
@@ -116,14 +103,4 @@ void app_main(void)
     WaveHardwareReady(wave_hardware_ready);
     lvgl_port_unlock();
     MAIN_INFO("UI initialized successfully");
-
-    // Initialize encoder only after the first UI frame exists. Encoder
-    // failure must never prevent ScopeBuddy from showing its interface.
-    MAIN_INFO("Initializing rotary encoder...");
-    esp_err_t err = encoder_input_init();
-    if (err == ESP_OK) {
-        MAIN_INFO("Rotary encoder initialized successfully");
-    } else {
-        MAIN_ERROR("Encoder unavailable: %s", esp_err_to_name(err));
-    }
 }

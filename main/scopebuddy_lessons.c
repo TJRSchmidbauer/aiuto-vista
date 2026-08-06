@@ -1,3 +1,5 @@
+// Lesson and measurement-task definitions.
+// Fork of ScopeBuddy (https://github.com/johannesboernsen/ScopeBuddy).
 #include "scopebuddy_lessons.h"
 
 #include "esp_check.h"
@@ -5,7 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define CH1_CONNECTION "CH1 an GPIO48, Masse an GND."
+#define CH1_CONNECTION "CH1 an GPIO26, Masse an GND."
 
 static const scope_lesson_definition_t lessons[SCOPEBUDDY_LESSON_COUNT] = {
     { .id = SCOPE_LESSON_PERIODIC, .title = "PERIODISCHES SIGNAL", .category = "GRUNDLAGEN",
@@ -56,37 +58,37 @@ static const scope_lesson_definition_t lessons[SCOPEBUDDY_LESSON_COUNT] = {
     { .id = SCOPE_LESSON_TRIGGER_RESPONSE, .title = "TRIGGER-ANTWORT", .category = "EREIGNISSE",
       .summary = "Triggerbreite, Antwortbreite und Reaktionszeit",
       .learning_objective = "Pulsbreiten und die Verzögerung zwischen zwei Kanälen bestimmen.",
-      .connection_hint = "CH1 an GPIO48, CH2 an GPIO47, gemeinsame Masse an GND.",
+      .connection_hint = "CH1 an GPIO26, CH2 an GPIO27, gemeinsame Masse an GND.",
       .trigger_hint = "Auf die steigende Flanke von CH1 triggern.",
       .required_channels = 2 },
     { .id = SCOPE_LESSON_PHASE_SHIFT, .title = "PHASENVERSCHIEBUNG", .category = "ZEITBEZIEHUNGEN",
       .summary = "Periodendauer, Zeitversatz und Phasenwinkel",
       .learning_objective = "Aus Periodendauer und Zeitversatz die Phasenlage berechnen.",
-      .connection_hint = "CH1 an GPIO48, CH2 an GPIO47, gemeinsame Masse an GND.",
+      .connection_hint = "CH1 an GPIO26, CH2 an GPIO27, gemeinsame Masse an GND.",
       .trigger_hint = "Auf CH1 triggern und die steigenden Flanken beider Kanäle vergleichen.",
       .required_channels = 2 },
     { .id = SCOPE_LESSON_FREQUENCY_DIVIDER, .title = "FREQUENZTEILER", .category = "TAKTSIGNALE",
       .summary = "Ein- und Ausgangsfrequenz sowie Teilverhältnis",
       .learning_objective = "Zwei Frequenzen messen und daraus das ganzzahlige Teilverhältnis bestimmen.",
-      .connection_hint = "CH1 an GPIO48, CH2 an GPIO47, gemeinsame Masse an GND.",
+      .connection_hint = "CH1 an GPIO26, CH2 an GPIO27, gemeinsame Masse an GND.",
       .trigger_hint = "Auf CH2 triggern und mehrere CH1-Perioden anzeigen.",
       .required_channels = 2 },
     { .id = SCOPE_LESSON_ULTRASONIC, .title = "ULTRASCHALL-ECHO", .category = "SENSORSIGNALE",
       .summary = "Echoverzögerung, Echobreite und Entfernung",
       .learning_objective = "Aus der Breite eines simulierten Echosignals eine Entfernung bestimmen.",
-      .connection_hint = "CH1 an GPIO48 (Trigger), CH2 an GPIO47 (Echo), Masse an GND.",
+      .connection_hint = "CH1 an GPIO26 (Trigger), CH2 an GPIO27 (Echo), Masse an GND.",
       .trigger_hint = "Auf die steigende Triggerflanke von CH1 triggern.",
       .required_channels = 2 },
     { .id = SCOPE_LESSON_GATED_PWM, .title = "FREIGEGEBENE PWM", .category = "STEUERSIGNALE",
       .summary = "Startverzögerung, Pulszahl und Freigabedauer",
       .learning_objective = "Startverzögerung, Pulszahl und Dauer eines freigegebenen PWM-Pakets messen.",
-      .connection_hint = "CH1 an GPIO48 (Freigabe), CH2 an GPIO47 (PWM), Masse an GND.",
+      .connection_hint = "CH1 an GPIO26 (Freigabe), CH2 an GPIO27 (PWM), Masse an GND.",
       .trigger_hint = "Auf die steigende Freigabeflanke von CH1 triggern.",
       .required_channels = 2 },
     { .id = SCOPE_LESSON_QUADRATURE, .title = "QUADRATURGEBER", .category = "ENCODERSIGNALE",
       .summary = "Periodendauer, Flankenversatz und führende Spur",
       .learning_objective = "Aus der führenden Spur die simulierte Drehrichtung bestimmen.",
-      .connection_hint = "CH1 an GPIO48 (Spur A), CH2 an GPIO47 (Spur B), Masse an GND.",
+      .connection_hint = "CH1 an GPIO26 (Spur A), CH2 an GPIO27 (Spur B), Masse an GND.",
       .trigger_hint = "Auf eine steigende Flanke von Spur A triggern.",
       .required_channels = 2 },
 };
@@ -243,7 +245,7 @@ static esp_err_t generate_pwm(scope_lesson_instance_t *instance)
     instance->signal.data.pwm = (scope_pwm_spec_t){ frequency, (uint8_t)duty };
     set_realized_pwm(&instance->realized[0], frequency, (uint8_t)duty);
     snprintf(instance->context, sizeof(instance->context),
-             "Miss das periodische Digitalsignal an GPIO48 gegen GND.");
+             "Miss das periodische Digitalsignal an GPIO26 gegen GND.");
     format_pwm_measurements(instance);
     return ESP_OK;
 }

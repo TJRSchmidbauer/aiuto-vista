@@ -1,0 +1,52 @@
+menu "BSP CYD Display Setup"
+
+    choice CYD_DISPLAY_FALLBACK
+        prompt "Fallback display controller (used when auto-detection fails)"
+        default CYD_DISPLAY_FALLBACK_ILI9341
+        help
+            The panel controller is read from the display at boot. If the ID
+            cannot be determined, this controller is used instead.
+        config CYD_DISPLAY_FALLBACK_ST7789
+            bool "ST7789"
+        config CYD_DISPLAY_FALLBACK_ILI9341
+            bool "ILI9341"
+    endchoice
+
+    config CYD_ST7789_INVERT
+        bool "Invert ST7789 colors"
+        default y
+        help
+            Most CYD ST7789 panels show inverted colors by default. Disable
+            this if the display looks correct (bright) with the setting off.
+
+    config CYD_TOUCH_SWAP_XY
+        bool "Swap touch X and Y axis"
+        default n
+        help
+            Raw XPT2046 axis mapping. All three axis flags must stay OFF:
+            the touch calibration (software transform) in bsp_display.c
+            expects unmodified raw coordinates.
+
+    config CYD_TOUCH_MIRROR_X
+        bool "Mirror touch X axis"
+        default n
+
+    config CYD_TOUCH_MIRROR_Y
+        bool "Mirror touch Y axis"
+        default n
+
+    config CYD_SW_MIRROR_X
+        bool "Software mirror X (landscape)"
+        default n
+        help
+            Mirrors the framebuffer horizontally in software (flush callback).
+            Needed on panels that ignore the MADCTL MX bit.
+
+    config CYD_SW_MIRROR_Y
+        bool "Software mirror Y (landscape)"
+        default y
+        help
+            Mirrors the framebuffer vertically in software (flush callback).
+            Needed on panels that ignore the MADCTL MY bit.
+
+endmenu

@@ -11,13 +11,13 @@ const manifestObjectUrls = [];
 function createManifest(version) {
   const firmwareUrl = new URL(version.firmware, document.baseURI).href;
   const manifest = {
-    name: "ScopeBuddy",
+    name: "Aiuto-Vista",
     version: version.version,
     new_install_prompt_erase: true,
     new_install_improv_wait_time: 0,
     builds: [
       {
-        chipFamily: "ESP32-P4",
+        chipFamily: "ESP32",
         improv: false,
         parts: [{ path: firmwareUrl, offset: 0 }],
       },
@@ -43,7 +43,7 @@ function selectVersion(versionNumber) {
 
   versionBadge.lastChild.textContent = ` Firmware ${version.version}`;
   introCopy.textContent =
-    `Diese Webseite überträgt ScopeBuddy ${version.version} direkt über USB ` +
+    `Diese Webseite überträgt Aiuto-Vista ${version.version} direkt über USB ` +
     "auf das Display. Dafür sind weder ESP-IDF noch Python oder Git notwendig.";
   versionNote.textContent = version.recommended
     ? `Version ${version.version} ist die aktuelle, empfohlene Version.`
@@ -88,7 +88,7 @@ async function loadVersionCatalog() {
     console.error(error);
     versionSelect.disabled = true;
     versionNote.textContent =
-      "Der Versionskatalog ist nicht erreichbar. Version 0.5.1 bleibt als Standard ausgewählt.";
+      "Der Versionskatalog ist nicht erreichbar. Version 0.6.0 bleibt als Standard ausgewählt.";
   }
 }
 

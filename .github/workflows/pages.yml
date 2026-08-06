@@ -26,21 +26,21 @@ jobs:
       - name: Validate published version
         shell: bash
         run: |
-          VERSION="0.5.1"
+          VERSION="0.6.0"
           grep -Fq "set(PROJECT_VER \"$VERSION\")" CMakeLists.txt
-          grep -Fq "#define SCOPEBUDDY_FIRMWARE_VERSION \"$VERSION\"" main/ui/ui_events.c
+          grep -Fq "#define AIUTO_VISTA_FIRMWARE_VERSION \"$VERSION\"" main/ui/ui_events.c
           grep -Fq "\"version\": \"$VERSION\"" docs/manifest.json
           grep -Fq "\"current\": \"$VERSION\"" docs/versions.json
-          grep -Fq "\"firmware\": \"firmware/scopebuddy-v$VERSION.bin\"" docs/versions.json
+          grep -Fq "\"firmware\": \"firmware/aiuto-vista-v$VERSION.bin\"" docs/versions.json
 
-      - name: Build ScopeBuddy
+      - name: Build Aiuto-Vista
         run: /opt/esp/entrypoint.sh idf.py build
 
       - name: Create browser-installable firmware
         run: |
           mkdir -p docs/firmware
-          /opt/esp/entrypoint.sh idf.py merge-bin -o "$GITHUB_WORKSPACE/docs/firmware/scopebuddy-v0.5.1.bin" -f raw
-          sha256sum docs/firmware/scopebuddy-v0.5.1.bin > docs/firmware/scopebuddy-v0.5.1.bin.sha256
+          /opt/esp/entrypoint.sh idf.py merge-bin -o "$GITHUB_WORKSPACE/docs/firmware/aiuto-vista-v0.6.0.bin" -f raw
+          sha256sum docs/firmware/aiuto-vista-v0.6.0.bin > docs/firmware/aiuto-vista-v0.6.0.bin.sha256
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5

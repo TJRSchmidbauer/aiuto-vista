@@ -1,3 +1,5 @@
+/* Lesson definitions for the measurement tasks.
+ * Fork of ScopeBuddy (https://github.com/johannesboernsen/ScopeBuddy). */
 #ifndef SCOPEBUDDY_LESSONS_H
 #define SCOPEBUDDY_LESSONS_H
 

@@ -3,8 +3,10 @@
 #include "driver/rmt_tx.h"
 /*——————————————————————————————————————Header file declaration end——————————————————————————————————————*/
 
-#define WAVE_GPIO              GPIO_NUM_48
-#define WAVE_GPIO_SECONDARY    GPIO_NUM_47
+/* Wave output: GPIO26 (audio in-) for channel 1, GPIO27 (CN1) for channel 2.
+ * Both pins are driven as push-pull outputs on the ESP32. */
+#define WAVE_GPIO              GPIO_NUM_26
+#define WAVE_GPIO_SECONDARY    GPIO_NUM_27
 #define WAVE_LEDC_MODE         LEDC_LOW_SPEED_MODE
 #define WAVE_LEDC_TIMER        LEDC_TIMER_0
 #define WAVE_LEDC_CHANNEL      LEDC_CHANNEL_0
@@ -29,11 +31,11 @@ static sequence_output_t sequence_outputs[] = {
 };
 static rmt_sync_manager_handle_t sequence_sync_manager;
 
-esp_err_t gpio_extra_init()                    // Function to initialize GPIO48 as output
+esp_err_t gpio_extra_init()                    // Function to initialize the wave GPIO as output
 {
     const gpio_config_t gpio_cofig = {         // Define GPIO configuration structure
-        .pin_bit_mask = (1ULL << 48),          // Select GPIO48 by setting bit 48 in the mask
-        .mode = GPIO_MODE_OUTPUT,              // Configure GPIO48 as output mode
+        .pin_bit_mask = (1ULL << WAVE_GPIO),   // Select the wave GPIO by setting its bit in the mask
+        .mode = GPIO_MODE_OUTPUT,              // Configure the wave GPIO as output mode
         .pull_up_en = false,                   // Disable internal pull-up resistor
         .pull_down_en = false,                 // Disable internal pull-down resistor
         .intr_type = GPIO_INTR_DISABLE,        // Disable GPIO interrupt for this pin
@@ -41,9 +43,9 @@ esp_err_t gpio_extra_init()                    // Function to initialize GPIO48 
     return gpio_config(&gpio_cofig);           // Apply the configuration and report any failure
 }
 
-esp_err_t gpio_extra_set_level(bool level)     // Function to set output level of GPIO48
+esp_err_t gpio_extra_set_level(bool level)     // Function to set output level of the wave GPIO
 {
-    return gpio_set_level(48, level);          // Set GPIO48 and report any failure
+    return gpio_set_level(WAVE_GPIO, level);   // Set the wave GPIO level and report any failure
 }
 
 esp_err_t gpio_wave_init(uint32_t frequency_hz, uint8_t duty_percent)
@@ -58,9 +60,9 @@ esp_err_t gpio_wave_init(uint32_t frequency_hz, uint8_t duty_percent)
         .timer_num = WAVE_LEDC_TIMER,
         .freq_hz = frequency_hz,
         /* All supported output frequencies (10 Hz to 20 kHz) fit comfortably
-         * with the 40 MHz crystal and 10-bit resolution. A fixed source avoids
+         * with the APB clock and 10-bit resolution. A fixed source avoids
          * runtime clock-source changes while hard challenges are switching. */
-        .clk_cfg = LEDC_USE_XTAL_CLK,
+        .clk_cfg = LEDC_AUTO_CLK,
     };
     ESP_RETURN_ON_ERROR(ledc_timer_config(&timer), EXTRA_TAG, "LEDC timer setup failed");
 

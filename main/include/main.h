@@ -1,6 +1,12 @@
 #ifndef _MAIN_H_
 #define _MAIN_H_
 
+/* Aiuto-Vista firmware entry point.
+ * Fork of ScopeBuddy (https://github.com/johannesboernsen/ScopeBuddy).
+ *
+ * Target hardware: Cheap Yellow Display ESP32-2432S028 (ESP32-WROOM-32).
+ */
+
 /*————————————————————————————————————————Header file declaration————————————————————————————————————————*/
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
@@ -12,8 +18,6 @@
 #include "bsp_extra.h"
 #include "bsp_display.h"
 #include "bsp_illuminate.h"
-#include "bsp_i2c.h"
-#include "bsp_stc8h1kxx.h"
 /*——————————————————————————————————————Header file declaration end——————————————————————————————————————*/
 
 /*——————————————————————————————————————————Variable declaration—————————————————————————————————————————*/

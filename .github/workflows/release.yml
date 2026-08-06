@@ -21,11 +21,11 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           grep -Fq "set(PROJECT_VER \"$VERSION\")" CMakeLists.txt
-          grep -Fq "#define SCOPEBUDDY_FIRMWARE_VERSION \"$VERSION\"" main/ui/ui_events.c
+          grep -Fq "#define AIUTO_VISTA_FIRMWARE_VERSION \"$VERSION\"" main/ui/ui_events.c
           grep -Fq "\"version\": \"$VERSION\"" docs/manifest.json
           grep -Fq "\"current\": \"$VERSION\"" docs/versions.json
 
-      - name: Build ScopeBuddy
+      - name: Build Aiuto-Vista
         run: /opt/esp/entrypoint.sh idf.py build
 
       - name: Create release assets
@@ -33,9 +33,9 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           mkdir -p release
-          /opt/esp/entrypoint.sh idf.py merge-bin -o "$GITHUB_WORKSPACE/release/scopebuddy-v$VERSION.bin" -f raw
+          /opt/esp/entrypoint.sh idf.py merge-bin -o "$GITHUB_WORKSPACE/release/aiuto-vista-v$VERSION.bin" -f raw
           cd release
-          sha256sum "scopebuddy-v$VERSION.bin" > "scopebuddy-v$VERSION.bin.sha256"
+          sha256sum "aiuto-vista-v$VERSION.bin" > "aiuto-vista-v$VERSION.bin.sha256"
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
@@ -43,5 +43,5 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
-            release/scopebuddy-*.bin
-            release/scopebuddy-*.bin.sha256
+            release/aiuto-vista-*.bin
+            release/aiuto-vista-*.bin.sha256

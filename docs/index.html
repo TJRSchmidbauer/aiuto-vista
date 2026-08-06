@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="dark">
     <meta name="theme-color" content="#07111c">
-    <title>ScopeBuddy installieren</title>
+    <title>Aiuto-Vista installieren</title>
     <meta
       name="description"
-      content="ScopeBuddy 0.5.1 direkt im Browser auf einem Elecrow CrowPanel Advanced 5 Zoll installieren."
+      content="Aiuto-Vista 0.6.0 direkt im Browser auf einem ESP32-2432S028 (Cheap Yellow Display) installieren. Fork of ScopeBuddy."
     >
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="styles.css">
@@ -22,11 +22,11 @@
     <div class="scope-grid" aria-hidden="true"></div>
 
     <header class="site-header">
-      <a class="brand" href="./" aria-label="ScopeBuddy Startseite">
+      <a class="brand" href="./" aria-label="Aiuto-Vista Startseite">
         <img src="scopebuddy-logo.svg" alt="" width="38" height="66">
-        <span>ScopeBuddy</span>
+        <span>Aiuto-Vista</span>
       </a>
-      <a class="github-link" href="https://github.com/johannesboernsen/ScopeBuddy">
+      <a class="github-link" href="https://github.com/TJRSchmidbauer/aiuto-vista">
         GitHub
         <span aria-hidden="true">↗</span>
       </a>
@@ -37,11 +37,12 @@
         <span class="notice-mark" aria-hidden="true">!</span>
         <div>
           <p class="section-label">Kompatibilität</p>
-          <h1 id="device-heading">Nur für das Elecrow CrowPanel Advanced 5″</h1>
+          <h1 id="device-heading">Nur für das Cheap Yellow Display 2432S028</h1>
           <p>
-            Dieser Installer ist ausschließlich für das Elecrow CrowPanel
-            Advanced 5″ mit ESP32-P4 und 800 × 480 Pixeln vorgesehen. Verwende
-            ihn nicht mit einem anderen ESP32 oder Display.
+            Dieser Installer ist ausschließlich für das ESP32-2432S028
+            („Cheap Yellow Display“, 2,8″ mit 320 × 240 Pixeln, CH340C-USB-Brücke)
+            vorgesehen. Verwende ihn nicht mit einem anderen ESP32 oder Display.
+            Das Projekt ist ein Fork of ScopeBuddy.
           </p>
         </div>
       </section>
@@ -51,12 +52,12 @@
           <div>
             <div class="version-badge">
               <span class="status-dot" aria-hidden="true"></span>
-              Firmware 0.5.1
+              Firmware 0.6.0
             </div>
             <p class="section-label">Browser-Installation</p>
-            <h2 id="install-heading">ScopeBuddy installieren</h2>
+            <h2 id="install-heading">Aiuto-Vista installieren</h2>
             <p class="intro-copy">
-              Diese Webseite überträgt ScopeBuddy 0.5.1 direkt über USB auf das
+              Diese Webseite überträgt Aiuto-Vista 0.6.0 direkt über USB auf das
               Display. Dafür sind weder ESP-IDF noch Python oder Git notwendig.
             </p>
           </div>
@@ -65,7 +66,7 @@
             <span aria-hidden="true">!</span>
             <p>
               <strong>Nutzung auf eigene Gefahr.</strong>
-              ScopeBuddy befindet sich noch in Entwicklung und ist keine fertig
+              Aiuto-Vista befindet sich noch in Entwicklung und ist keine fertig
               entwickelte oder abschließend getestete Software. Bei der
               Installation werden vorhandene Flash-Daten gelöscht.
             </p>
@@ -83,14 +84,14 @@
             <span class="step-number" aria-hidden="true">01</span>
             <div>
               <strong>Display per USB verbinden</strong>
-              <p>Das Elecrow-Display mit einem USB-Datenkabel an den Rechner anschließen.</p>
+              <p>Das Display mit einem USB-Datenkabel an den Rechner anschließen (USB-Anschluss an der kurzen Seite, neben dem Audio-Klinkenstecker).</p>
             </div>
           </li>
           <li>
             <span class="step-number" aria-hidden="true">02</span>
             <div>
               <strong>Download-Modus aktivieren</strong>
-              <p>Auf der Rückseite des Displays BOOT gedrückt halten, RST kurz drücken und anschließend BOOT loslassen.</p>
+              <p>Auf der Platine BOOT gedrückt halten, RST kurz drücken und anschließend BOOT loslassen.</p>
               <div class="button-sequence" aria-label="BOOT gedrückt halten, RST kurz drücken, BOOT loslassen">
                 <span><kbd>BOOT</kbd><small>halten</small></span>
                 <b aria-hidden="true">→</b>
@@ -111,14 +112,14 @@
             <span class="step-number" aria-hidden="true">04</span>
             <div>
               <strong>Seriellen Port auswählen</strong>
-              <p>Im Browserdialog „ESP32-P4“ als seriellen Port auswählen und die Verbindung bestätigen.</p>
+              <p>Im Browserdialog den Port auswählen, der „CH340“ im Namen enthält, und die Verbindung bestätigen.</p>
             </div>
           </li>
           <li>
             <span class="step-number" aria-hidden="true">05</span>
             <div>
-              <strong>ScopeBuddy auswählen</strong>
-              <p>Im Installer auf „Install ScopeBuddy“ klicken.</p>
+              <strong>Aiuto-Vista auswählen</strong>
+              <p>Im Installer auf „Install Aiuto-Vista“ klicken.</p>
             </div>
           </li>
           <li>
@@ -146,14 +147,14 @@
             <span class="step-number" aria-hidden="true">09</span>
             <div>
               <strong>Display neu starten</strong>
-              <p>Wenn „Wrapping up“ erscheint, einmal kurz die RST-Taste auf der Rückseite des Displays drücken.</p>
+              <p>Wenn „Wrapping up“ erscheint, einmal kurz die RST-Taste auf der Platine drücken.</p>
             </div>
           </li>
           <li>
             <span class="step-number" aria-hidden="true">10</span>
             <div>
               <strong>Fertig</strong>
-              <p>ScopeBuddy startet nun automatisch auf dem Display.</p>
+              <p>Aiuto-Vista startet nun automatisch auf dem Display.</p>
             </div>
           </li>
         </ol>
@@ -162,10 +163,10 @@
           <div class="version-selection">
             <label for="firmware-version">Firmware-Version</label>
             <select id="firmware-version" aria-describedby="version-note">
-              <option value="0.5.1">0.5.1 (aktuell)</option>
+              <option value="0.6.0">0.6.0 (aktuell)</option>
             </select>
             <p id="version-note" aria-live="polite">
-              Version 0.5.1 ist die aktuelle, empfohlene Version.
+              Version 0.6.0 ist die aktuelle, empfohlene Version.
             </p>
           </div>
           <p>Display angeschlossen und Download-Modus aktiviert?</p>
@@ -193,18 +194,41 @@
           <p>
             Prüfe zuerst, ob ein USB-Datenkabel verwendet wird und keine andere
             Anwendung den seriellen Port geöffnet hat. Lade danach die Seite neu
-            und wiederhole die vollständige Tastenfolge auf der Rückseite:
+            und wiederhole die vollständige Tastenfolge auf der Platine:
             BOOT gedrückt halten, RST kurz drücken und erst danach BOOT loslassen.
-            Klicke anschließend erneut auf „Mit Gerät verbinden“ und wähle
-            „ESP32-P4“ aus.
+          </p>
+        </div>
+      </section>
+
+      <section class="details" aria-labelledby="serial-heading">
+        <div class="help-mark" aria-hidden="true">↓</div>
+        <div>
+          <p class="section-label">Installation per esptool (Fallback)</p>
+          <h2 id="serial-heading">Browser-Installation funktioniert nicht?</h2>
+          <p>
+            Das 2432S028 nutzt die CH340C-USB-Brücke. Diese erscheint im
+            Browserdialog zwar als serieller Port, die Web-Serial-Übertragung
+            kann aber bei manchen CH340-Varianten fehlschlagen. Lade dann die
+            Firmware-Datei
+            <a href="firmware/aiuto-vista-v0.6.0.bin">aiuto-vista-v0.6.0.bin</a>
+            herunter (bei GitHub Pages bereitgestellt) und flashe sie mit
+            esptool:
+          </p>
+          <pre class="esptool-command">python -m pip install esptool
+esptool.py --port COM3 --baud 460800 write_flash 0x0 aiuto-vista-v0.6.0.bin</pre>
+          <p>
+            Bei Linux lautet der Port meist <code>/dev/ttyUSB0</code>, bei macOS
+            <code>/dev/tty.usbserial-…</code>. Alternativ eignet sich auch die
+            Arduino-IDE mit installiertem ESP32-Kern, um die
+            <code>.bin</code>-Datei zu flashen.
           </p>
         </div>
       </section>
     </main>
 
     <footer>
-      <span>ScopeBuddy · Oszilloskop-Training mit echten Messsignalen</span>
-      <a class="report-link" href="https://github.com/johannesboernsen/ScopeBuddy/issues">
+      <span>Aiuto-Vista · Oszilloskop-Training mit echten Messsignalen · Fork of ScopeBuddy</span>
+      <a class="report-link" href="https://github.com/TJRSchmidbauer/aiuto-vista/issues">
         Problem melden
         <span aria-hidden="true">↗</span>
       </a>

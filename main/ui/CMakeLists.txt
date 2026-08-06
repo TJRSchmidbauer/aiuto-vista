@@ -2,8 +2,6 @@ SET(SOURCES ui_Screen1.c
     ui.c
     ui_comp_hook.c
     ui_helpers.c
-    ui_events.c
-    ui_img_scopebuddy_logo.c
-    ui_img_scopebuddy_splash.c)
+    ui_events.c)
 
 add_library(ui ${SOURCES})

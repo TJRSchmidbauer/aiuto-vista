@@ -1,223 +1,191 @@
-/*————————————————————————————————————————Header file declaration————————————————————————————————————————*/
-#include "bsp_illuminate.h"  // Include BSP display header (LCD and related configurations)
-#include "bsp_stc8h1kxx.h"   // Include header for STC8H1KXX microcontroller (used for PWM control)
-#include "bsp_display.h" 
-/*——————————————————————————————————————Header file declaration end——————————————————————————————————————*/
+/* Aiuto-Vista board support package: LVGL integration and backlight.
+ * Fork of ScopeBuddy (https://github.com/johannesboernsen/ScopeBuddy).
+ */
 
-/*——————————————————————————————————————————Variable declaration—————————————————————————————————————————*/
+#include "bsp_illuminate.h"
+#include "bsp_display.h"
+#include "esp_check.h"
+#include "esp_heap_caps.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
-esp_lcd_panel_handle_t panel_handle = NULL;          /* Type of LCD panel handle */
-static lv_display_t *my_lvgl_disp = NULL;            /* Backward compatibility with LVGL 8 */
+lv_display_t *my_lvgl_disp = NULL;
+lv_indev_t *my_touch_indev = NULL;
 
-static lv_obj_t *color_obj;                          // LVGL canvas object pointer
-lv_color_t *color_buffer;                            // LVGL color buffer pointer
+#ifdef CONFIG_CYD_SW_MIRROR_X
+#define CYD_SW_MIRROR_X 1
+#else
+#define CYD_SW_MIRROR_X 0
+#endif
 
-static lv_indev_t *my_touch_indev;
-/*————————————————————————————————————————Variable declaration end———————————————————————————————————————*/
+#ifdef CONFIG_CYD_SW_MIRROR_Y
+#define CYD_SW_MIRROR_Y 1
+#else
+#define CYD_SW_MIRROR_Y 0
+#endif
 
-/*—————————————————————————————————————————Functional function———————————————————————————————————————————*/
-
-static esp_err_t blight_init(void)  // Initialize LCD backlight (PWM control)
+/* LVGL flush callback with optional software mirroring.
+ * Required because some CYD panels ignore the MADCTL MX/MY bits, so a fixed
+ * address inversion remains in the panel's logical-to-physical mapping.
+ * A pure in-band pixel swap would leave the flush windows (LVGL flushes the
+ * screen in bands) in reversed order. The exact inverse of the panel
+ * mapping is: reverse the pixels within the window AND invert the window
+ * coordinates before drawing.
+ * The mirroring is done in place in the LVGL draw buffer: LVGL only reuses
+ * the buffer after the flush-ready signal, so in-flight async SPI transfers
+ * can never read overwritten pixels (a shared bounce buffer would break
+ * when multiple flushes are queued at once).
+ * The flush-ready signal is sent by the panel IO color-trans-done callback
+ * (LVGL_PORT_HANDLE_FLUSH_READY), same as the stock LVGL port flush. */
+static void lvgl_port_flush_mirror_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map)
 {
-    return ESP_OK;  // Return success (currently no specific initialization)
+    const int w = area->x2 - area->x1 + 1;
+    const int h = area->y2 - area->y1 + 1;
+    int x1 = area->x1;
+    int y1 = area->y1;
+    int x2 = area->x2 + 1;
+    int y2 = area->y2 + 1;
+
+#if CYD_SW_MIRROR_X || CYD_SW_MIRROR_Y
+    if (CYD_SW_MIRROR_X) {
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w / 2; x++) {
+                lv_color_t tmp = color_map[y * w + x];
+                color_map[y * w + x] = color_map[y * w + (w - 1 - x)];
+                color_map[y * w + (w - 1 - x)] = tmp;
+            }
+        }
+        x1 = H_size - x2;
+        x2 = H_size - area->x1;
+    }
+    if (CYD_SW_MIRROR_Y) {
+        for (int y = 0; y < h / 2; y++) {
+            for (int x = 0; x < w; x++) {
+                lv_color_t tmp = color_map[y * w + x];
+                color_map[y * w + x] = color_map[(h - 1 - y) * w + x];
+                color_map[(h - 1 - y) * w + x] = tmp;
+            }
+        }
+        y1 = V_size - y2;
+        y2 = V_size - area->y1;
+    }
+#endif
+
+    esp_lcd_panel_draw_bitmap(panel_handle, x1, y1, x2, y2, color_map);
 }
 
-/* brightness -  (0 - 100) */
+/* Backlight: LEDC PWM on GPIO21 */
+static esp_err_t blight_init(void)
+{
+    const ledc_timer_config_t timer_cfg = {
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .duty_resolution = LEDC_TIMER_8_BIT,
+        .timer_num = LEDC_TIMER_1,
+        .freq_hz = BLIGHT_PWM_Hz,
+        .clk_cfg = LEDC_AUTO_CLK,
+    };
+    ESP_RETURN_ON_ERROR(ledc_timer_config(&timer_cfg), ILLUMINATE_TAG, "Backlight timer config failed");
+
+    const ledc_channel_config_t channel_cfg = {
+        .gpio_num = LCD_GPIO_BLIGHT,
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .channel = LEDC_CHANNEL_1,
+        .intr_type = LEDC_INTR_DISABLE,
+        .timer_sel = LEDC_TIMER_1,
+        .duty = 0,
+        .hpoint = 0,
+    };
+    return ledc_channel_config(&channel_cfg);
+}
+
 esp_err_t set_lcd_blight(uint32_t brightness)
 {
-    esp_err_t err = ESP_OK;                                     // Define error status variable
-    stc8_set_pwm_duty(STC8_PWM_LCD_BL_EN, brightness);          // Set the PWM duty cycle for LCD backlight brightness
-    return err;                                                 // Return success
-}
-
-static esp_err_t display_port_init(void)
-{
-    esp_err_t err = ESP_OK;                                     // Define error status variable
-
-    esp_lcd_rgb_panel_config_t panel_config = {                 /* RGB LCD configuration structure */
-        .data_width = RGB_DATA_BUS_WIDTH,                       /* Data width: 16 bits */
-#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 3, 0)
-        .psram_trans_align = 64,                                // Alignment for PSRAM buffer (older IDF version)
-#else
-        .dma_burst_size = 64,                                   /* DMA burst size alignment for PSRAM buffer */
-#endif
-        .num_fbs = 2,                                           /* Number of frame buffers */
-#if CONFIG_RGB_USE_BOUNCE_BUFFER
-        .bounce_buffer_size_px = 20 * RGB_LCD_H_RES,            // Set bounce buffer size if enabled
-#endif
-        .clk_src = LCD_CLK_SRC_DEFAULT,                         /* Clock source for RGB LCD peripheral */
-        .disp_gpio_num = RGB_PIN_NUM_DISP_EN,                   /* Display enable control pin, -1 if unused */
-        .pclk_gpio_num = RGB_PIN_NUM_PCLK,                      /* PCLK signal pin */
-        .vsync_gpio_num = RGB_PIN_NUM_VSYNC,                    /* VSYNC signal pin (not required in DE mode) */
-        .hsync_gpio_num = RGB_PIN_NUM_HSYNC,                    /* HSYNC signal pin (not required in DE mode) */
-        .de_gpio_num = RGB_PIN_NUM_DE,                          /* DE (Data Enable) signal pin */
-        .data_gpio_nums = {                                     // RGB data pins
-            RGB_PIN_NUM_DATA0,
-            RGB_PIN_NUM_DATA1,
-            RGB_PIN_NUM_DATA2,
-            RGB_PIN_NUM_DATA3,
-            RGB_PIN_NUM_DATA4,
-            RGB_PIN_NUM_DATA5,
-            RGB_PIN_NUM_DATA6,
-            RGB_PIN_NUM_DATA7,
-            RGB_PIN_NUM_DATA8,
-            RGB_PIN_NUM_DATA9,
-            RGB_PIN_NUM_DATA10,
-            RGB_PIN_NUM_DATA11,
-            RGB_PIN_NUM_DATA12,
-            RGB_PIN_NUM_DATA13,
-            RGB_PIN_NUM_DATA14,
-            RGB_PIN_NUM_DATA15,
-#if CONFIG_RGB_LCD_DATA_LINES > 16
-            RGB_PIN_NUM_DATA16,
-            RGB_PIN_NUM_DATA17,
-            RGB_PIN_NUM_DATA18,
-            RGB_PIN_NUM_DATA19,
-            RGB_PIN_NUM_DATA20,
-            RGB_PIN_NUM_DATA21,
-            RGB_PIN_NUM_DATA22,
-            RGB_PIN_NUM_DATA23
-#endif  
-        },                                          
-        .timings = {                                /* RGB LCD timing parameters */
-            .pclk_hz = RGB_LCD_PIXEL_CLOCK_HZ,      /* Pixel clock frequency */
-            .h_res = RGB_LCD_H_RES,                 /* Horizontal resolution (pixels per line) */
-            .v_res = RGB_LCD_V_RES,                 /* Vertical resolution (lines per frame) */
-            .hsync_back_porch = RGB_LCD_HBP,        /* Horizontal back porch (PCLK cycles between HSYNC and active data) */
-            .hsync_front_porch = RGB_LCD_HFP,       /* Horizontal front porch (PCLK cycles between active data and next HSYNC) */
-            .hsync_pulse_width = RGB_LCD_HSYNC,     /* HSYNC pulse width (in PCLK cycles) */
-            .vsync_back_porch = RGB_LCD_VBP,        /* Vertical back porch (blank lines between VSYNC and frame start) */
-            .vsync_front_porch = RGB_LCD_VFP,       /* Vertical front porch (blank lines between frame end and next VSYNC) */
-            .vsync_pulse_width = RGB_LCD_VSYNC,     /* VSYNC pulse width (in lines) */
-            .flags = {
-                .hsync_idle_low = false,            /*!< HSYNC signal is low in IDLE state */
-                .vsync_idle_low = false,            /*!< VSYNC signal is low in IDLE state */
-                .de_idle_high = false,              /*!< DE signal is high in IDLE state */
-                .pclk_active_neg = true,            /* RGB data is sampled on falling edge of PCLK */
-                .pclk_idle_high = true,             /* PCLK remains high during idle periods */
-            },
-        },
-        .flags.fb_in_psram = true,                  /* Allocate frame buffer in PSRAM */
-    };
-    err = esp_lcd_new_rgb_panel(&panel_config, &panel_handle);  /* Create a new RGB panel instance */
-    if (err != ESP_OK)
-        return err;                                 // Return error if panel creation fails
-    ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle)); /* Reset the RGB panel */
-    
-    ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));  /* Initialize the RGB panel */
-
-    return err;                                     // Return success
-}
-
-static esp_err_t lvgl_init()
-{
-    esp_err_t err = ESP_OK;                                        // Define error status variable
-    const lvgl_port_cfg_t lvgl_cfg = {
-        .task_priority = configMAX_PRIORITIES - 4,                 /* LVGL task priority */
-        .task_stack = 8192*2,                                      /* LVGL task stack size 16KB */ 
-        .task_affinity = -1,                                       /* No CPU core affinity */
-        .task_max_sleep_ms = 10,                                   /* Max sleep time for LVGL task */
-        .timer_period_ms = 5,                                      /* LVGL timer tick period (ms) */
-    };
-    err = lvgl_port_init(&lvgl_cfg);                               // Initialize LVGL port
-    if (err != ESP_OK)
-    {
-        ILLUMINATE_ERROR("LVGL port initialization failed");        // Log error if LVGL init fails
+    if (brightness > 100) {
+        brightness = 100;
     }
+    const uint32_t duty = (brightness * ((1U << BLIGHT_PWM_BITS) - 1U)) / 100U;
+    esp_err_t ret = ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, duty);
+    if (ret == ESP_OK) {
+        ret = ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1);
+    }
+    return ret;
+}
+
+static void project_touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
+{
+    (void)indev_drv;
+    uint16_t x = 0;
+    uint16_t y = 0;
+    bool pressed = false;
+    if (touch_read() == ESP_OK) {
+        get_coor(&x, &y, &pressed);
+    }
+    if (pressed) {
+        data->point.x = x;
+        data->point.y = y;
+        data->state = LV_INDEV_STATE_PRESSED;
+    } else {
+        data->state = LV_INDEV_STATE_RELEASED;
+    }
+}
+
+static esp_err_t lvgl_init(void)
+{
+    const lvgl_port_cfg_t lvgl_cfg = {
+        .task_priority = configMAX_PRIORITIES - 4,
+        .task_stack = 8192,
+        .task_affinity = -1,
+        .task_max_sleep_ms = 10,
+        .timer_period_ms = 5,
+    };
+    ESP_RETURN_ON_ERROR(lvgl_port_init(&lvgl_cfg), ILLUMINATE_TAG, "LVGL port init failed");
 
     const lvgl_port_display_cfg_t disp_cfg = {
-        // .io_handle = mipi_dbi_io,
-        .panel_handle = panel_handle,                              // Bind to the created LCD panel
-        .control_handle = panel_handle,                            // Control handle (same as panel) 
-        // ⬆⬆⬆ This is an instance of esp_lcd_panel that was previously created (created in display_port_init()), 
-        // and it is used by LVGL to send frame data to the physical panel.
-        .buffer_size = (H_size * V_size),                          // LVGL buffer size
-        .double_buffer = false,                                    // Disable double buffering
-        .hres = H_size,                                            // Horizontal resolution
-        .vres = V_size,                                            // Vertical resolution
-        .monochrome = false,                                       // Color display
-
-#if LVGL_VERSION_MAJOR >= 9
-        .color_format = LV_COLOR_FORMAT_RGB565,                    // Color format for LVGL 9
-#endif
-
+        .io_handle = panel_io_handle,
+        .panel_handle = panel_handle,
+        .buffer_size = H_size * 40,
+        .double_buffer = false,
+        .hres = H_size,
+        .vres = V_size,
+        .monochrome = false,
         .rotation = {
-            .swap_xy = false,                                      // No XY swap
-            .mirror_x = false,                                     // No X mirroring
-            .mirror_y = false,                                     // No Y mirroring
+            .swap_xy = false,
+            .mirror_x = false,
+            .mirror_y = false,
         },
         .flags = {
-            .buff_dma = false,                                     // Disable DMA buffer
-            .buff_spiram = true,                                   // Allocate buffer in PSRAM
-            .sw_rotate = false,                                    // Disable software rotation
-
-#if LVGL_VERSION_MAJOR >= 9
-            .swap_bytes = false,                                    // Swap byte order for RGB565
-#endif
-
-#if CONFIG_DISPLAY_LVGL_FULL_REFRESH
-            .full_refresh = true,                                  // Enable full screen refresh
-#else
-            .full_refresh = false,                                 // Disable full screen refresh
-#endif
-
-#if CONFIG_DISPLAY_LVGL_DIRECT_MODE
-            .direct_mode = true,                                   // Enable direct rendering mode
-#else
-            .direct_mode = true,                                   // Direct rendering mode (default)
-#endif
+            .buff_dma = true,
+            .buff_spiram = false,
+            .sw_rotate = false,
+            .full_refresh = false,
+            .direct_mode = false,
         },
     };
-    const lvgl_port_display_rgb_cfg_t lvgl_rgb_cfg = {
-        .flags = {
-#if CONFIG_DISPLAY_LVGL_AVOID_TEAR
-            .avoid_tearing = true,                                 // Enable tearing avoidance
-#else
-            .avoid_tearing = true,                                 // Enable tearing avoidance (default)
-#endif
-        },
-    };
-    my_lvgl_disp = lvgl_port_add_disp_rgb(&disp_cfg, &lvgl_rgb_cfg); // Add LVGL RGB display
-    if (my_lvgl_disp == NULL)
-    {
-        err = ESP_FAIL;                                            // Set error if display creation fails
-        ILLUMINATE_ERROR("LVGL rgb port add fail");                // Log error
+    my_lvgl_disp = lvgl_port_add_disp(&disp_cfg);
+    if (my_lvgl_disp == NULL) {
+        ILLUMINATE_ERROR("Failed to add LVGL display");
+        return ESP_FAIL;
     }
+    my_lvgl_disp->driver->flush_cb = lvgl_port_flush_mirror_cb;
 
-    const lvgl_port_touch_cfg_t touch_cfg = {
-        .disp = my_lvgl_disp,
-        .handle = tp,
-    };
-    my_touch_indev = lvgl_port_add_touch(&touch_cfg); // The touch input device is registered to LVGL
-    if (my_touch_indev == NULL)
-    {
-        err = ESP_FAIL;
-        ILLUMINATE_ERROR("LVGL touch port add fail");
+    static lv_indev_drv_t indev_drv;
+    lv_indev_drv_init(&indev_drv);
+    indev_drv.type = LV_INDEV_TYPE_POINTER;
+    indev_drv.disp = my_lvgl_disp;
+    indev_drv.read_cb = project_touchpad_read;
+    my_touch_indev = lv_indev_drv_register(&indev_drv);
+    if (my_touch_indev == NULL) {
+        ILLUMINATE_ERROR("Failed to add LVGL touch input device");
+        return ESP_FAIL;
     }
-    return err;                                                    // Return success or failure
+    return ESP_OK;
 }
 
-void fill_screen_with_color(lv_color_t color)
+esp_err_t display_init(void)
 {
-    lv_canvas_fill_bg(color_obj, color, LV_OPA_COVER);             // Fill the LVGL canvas background with a solid color
+    ESP_RETURN_ON_ERROR(blight_init(), ILLUMINATE_TAG, "Backlight init failed");
+    ESP_RETURN_ON_ERROR(display_port_init(), ILLUMINATE_TAG, "Display port init failed");
+    ESP_RETURN_ON_ERROR(lvgl_init(), ILLUMINATE_TAG, "LVGL init failed");
+    ILLUMINATE_INFO("Display ready: %dx%d", H_size, V_size);
+    return ESP_OK;
 }
-
-esp_err_t display_init()
-{
-    esp_err_t err = ESP_OK;                                        // Define error status variable
-    err = blight_init();                                           // Initialize backlight
-    if (err != ESP_OK)
-        return err;
-    err = display_port_init();                                     // Initialize display port (RGB LCD)
-    if (err != ESP_OK)
-        return err;
-    err = lvgl_init();                                             // Initialize LVGL graphics library
-    if (err != ESP_OK)
-    {
-        ILLUMINATE_ERROR("Display init fail");                     // Log error if display initialization fails
-        return err;
-    }
-
-    return err;                                                    // Return success
-}
-/*———————————————————————————————————————Functional function end—————————————————————————————————————————*/

@@ -1,3 +1,5 @@
+// Signal generation for the measurement tasks.
+// Fork of ScopeBuddy (https://github.com/johannesboernsen/ScopeBuddy).
 #include "scopebuddy_output.h"
 
 #include "bsp_extra.h"

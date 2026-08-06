@@ -1,3 +1,5 @@
+/* Signal generation API for the measurement tasks.
+ * Fork of ScopeBuddy (https://github.com/johannesboernsen/ScopeBuddy). */
 #ifndef SCOPEBUDDY_OUTPUT_H
 #define SCOPEBUDDY_OUTPUT_H
 

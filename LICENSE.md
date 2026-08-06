@@ -1,3 +1,19 @@
+# Aiuto-Vista licensing
+
+## Fork notice
+
+This repository is a **fork of ScopeBuddy** by Johannes Börnsen
+(https://github.com/johannesboernsen/ScopeBuddy). The idea, the lessons, the
+measurement tasks, and the original software, documentation, and artwork
+originate from ScopeBuddy and remain governed by the ScopeBuddy Community
+License 1.0 as described below. Aiuto-Vista is a distinct project name as
+required by that license. New contributions specific to this fork (Cheap
+Yellow Display support, touch calibration, UI adjustments) are offered under
+the same ScopeBuddy Community License 1.0 terms. The original licensing text
+follows unchanged.
+
+---
+
 # ScopeBuddy licensing
 
 ScopeBuddy is **source-available**, but it is not Open Source as defined by the

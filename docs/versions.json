@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "current": "0.5.1",
+  "current": "0.6.0",
   "versions": [
     {
-      "version": "0.5.1",
+      "version": "0.6.0",
       "recommended": true,
-      "firmware": "firmware/scopebuddy-v0.5.1.bin"
+      "firmware": "firmware/aiuto-vista-v0.6.0.bin"
     }
   ]
 }

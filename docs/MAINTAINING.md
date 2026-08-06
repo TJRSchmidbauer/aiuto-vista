@@ -1,13 +1,14 @@
-# Maintaining ScopeBuddy
+# Maintaining Aiuto-Vista
 
 This document covers repository, web-installer, and release maintenance. It is
-not required for assembling or using ScopeBuddy.
+not required for assembling or using Aiuto-Vista. Aiuto-Vista is a fork of
+ScopeBuddy (https://github.com/johannesboernsen/ScopeBuddy).
 
 ## Repository layout
 
-- `main/` — ScopeBuddy application and LVGL user interface
+- `main/` — Aiuto-Vista application and LVGL user interface
 - `hardware/enclosure/` — printable enclosure model
-- `peripheral/` — display, touch, backlight, I2C, and board support
+- `peripheral/` — display, touch, backlight, and board support
 - `docs/` — GitHub Pages installer and project documentation
 - `.github/workflows/pages.yml` — firmware build and Pages deployment
 - `.github/workflows/release.yml` — versioned firmware release publishing
@@ -23,7 +24,7 @@ ESP Web Tools manifest in the browser.
 On every push to `main`, `.github/workflows/pages.yml`:
 
 1. validates that the published version values agree;
-2. builds ScopeBuddy with ESP-IDF 5.4.2;
+2. builds Aiuto-Vista with ESP-IDF 5.4.2;
 3. merges the bootloader, partition table, OTA data, and application into one
    browser-installable image;
 4. generates a SHA-256 checksum; and
@@ -39,7 +40,7 @@ in [HARDWARE_VALIDATION.md](HARDWARE_VALIDATION.md).
 
 1. Update and keep these values in sync:
    - `PROJECT_VER` in `CMakeLists.txt`
-   - `SCOPEBUDDY_FIRMWARE_VERSION` in `main/ui/ui_events.c`
+   - `AIUTO_VISTA_FIRMWARE_VERSION` in `main/ui/ui_events.c`
    - `version` and the firmware filename in `docs/manifest.json`
    - `current`, the current entry, and its firmware filename in
      `docs/versions.json`
@@ -53,19 +54,19 @@ in [HARDWARE_VALIDATION.md](HARDWARE_VALIDATION.md).
    {
      "version": "0.5.1",
      "recommended": false,
-     "firmware": "https://github.com/johannesboernsen/ScopeBuddy/releases/download/v0.5.1/scopebuddy-v0.5.1.bin"
+     "firmware": "https://github.com/TJRSchmidbauer/aiuto-vista/releases/download/v0.5.1/aiuto-vista-v0.5.1.bin"
    }
    ```
 
 3. Build, flash, and perform the diagnostic and lesson smoke tests on the target
-   CrowPanel.
+   Cheap Yellow Display.
 4. Commit and push the release to `main`, then confirm that the Pages workflow
    succeeds and the current firmware is installable.
 5. Create and push the matching annotated version tag:
 
    ```sh
-   VERSION=0.5.2
-   git tag -a "v${VERSION}" -m "ScopeBuddy ${VERSION}"
+   VERSION=0.6.1
+   git tag -a "v${VERSION}" -m "Aiuto-Vista ${VERSION}"
    git push origin "v${VERSION}"
    ```
 
