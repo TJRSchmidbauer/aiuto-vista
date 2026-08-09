@@ -24,18 +24,35 @@ jobs:
           grep -Fq "#define AIUTO_VISTA_FIRMWARE_VERSION \"$VERSION\"" main/ui/ui_events.c
           grep -Fq "\"version\": \"$VERSION\"" docs/manifest.json
           grep -Fq "\"current\": \"$VERSION\"" docs/versions.json
+          grep -Fq "\"firmware\": \"firmware/aiuto-vista-v${VERSION}-digital.bin\"" docs/versions.json
+          grep -Fq "\"firmware\": \"firmware/aiuto-vista-v${VERSION}-mcp4725.bin\"" docs/versions.json
 
-      - name: Build Aiuto-Vista
+      - name: Build Aiuto-Vista (digital)
         run: /opt/esp/entrypoint.sh idf.py build
 
-      - name: Create release assets
+      - name: Create digital release asset
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           mkdir -p release
-          /opt/esp/entrypoint.sh idf.py merge-bin -o "$GITHUB_WORKSPACE/release/aiuto-vista-v$VERSION.bin" -f raw
+          /opt/esp/entrypoint.sh idf.py merge-bin -o "$GITHUB_WORKSPACE/release/aiuto-vista-v$VERSION-digital.bin" -f raw
           cd release
-          sha256sum "aiuto-vista-v$VERSION.bin" > "aiuto-vista-v$VERSION.bin.sha256"
+          sha256sum "aiuto-vista-v$VERSION-digital.bin" > "aiuto-vista-v$VERSION-digital.bin.sha256"
+
+      - name: Build Aiuto-Vista (MCP4725-DAC)
+        env:
+          SDKCONFIG_DEFAULTS: "sdkconfig.defaults;sdkconfig.mcp4725.defaults"
+        run: |
+          rm -f sdkconfig
+          /opt/esp/entrypoint.sh idf.py -B build_mcp4725 build
+
+      - name: Create MCP4725 release asset
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          /opt/esp/entrypoint.sh idf.py -B build_mcp4725 merge-bin -o "$GITHUB_WORKSPACE/release/aiuto-vista-v$VERSION-mcp4725.bin" -f raw
+          cd release
+          sha256sum "aiuto-vista-v$VERSION-mcp4725.bin" > "aiuto-vista-v$VERSION-mcp4725.bin.sha256"
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2

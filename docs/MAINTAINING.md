@@ -24,11 +24,19 @@ ESP Web Tools manifest in the browser.
 On every push to `main`, `.github/workflows/pages.yml`:
 
 1. validates that the published version values agree;
-2. builds Aiuto-Vista with ESP-IDF 5.4.2;
-3. merges the bootloader, partition table, OTA data, and application into one
-   browser-installable image;
-4. generates a SHA-256 checksum; and
+2. builds both firmware variants with ESP-IDF 5.4.2:
+   - **digital** (default `sdkconfig.defaults`) and
+   - **MCP4725-DAC** (`SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.mcp4725.defaults"`);
+3. merges the bootloader, partition table, OTA data, and application of each
+   variant into one browser-installable image, named
+   `aiuto-vista-v<version>-digital.bin` and
+   `aiuto-vista-v<version>-mcp4725.bin`;
+4. generates SHA-256 checksums; and
 5. deploys the installer and current firmware to GitHub Pages.
+
+`docs/versions.json` lists the firmware variants of the current version.
+`docs/installer.js` asks the user for version and variant and builds the
+manifest for the selected variant.
 
 The repository's GitHub Pages source must be set to **GitHub Actions**. A failed
 build prevents deployment, so the last working installer stays online.
@@ -42,7 +50,7 @@ in [HARDWARE_VALIDATION.md](HARDWARE_VALIDATION.md).
    - `PROJECT_VER` in `CMakeLists.txt`
    - `AIUTO_VISTA_FIRMWARE_VERSION` in `main/ui/ui_events.c`
    - `version` and the firmware filename in `docs/manifest.json`
-   - `current`, the current entry, and its firmware filename in
+   - `current`, the current entry, and its variant firmware filenames in
      `docs/versions.json`
    - the two firmware paths and validation value in
      `.github/workflows/pages.yml`

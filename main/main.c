@@ -63,8 +63,12 @@ static void system_init(void) {
     if (err != ESP_OK) init_fail_handler("LCD Backlight", err);
     MAIN_INFO("LCD backlight opened (brightness: 100)");
 
-    // 4. Initialize the waveform generator on GPIO26, initially stopped
+    // 4. Initialize the waveform generator, initially stopped
+#ifdef CONFIG_CYD_MCP4725_SUPPORT
+    MAIN_INFO("Initializing MCP4725 DAC waveform generator...");
+#else
     MAIN_INFO("Initializing GPIO26 waveform generator...");
+#endif
     err = gpio_wave_init(1000, 50);
     if (err == ESP_OK) err = gpio_wave_stop();
     wave_hardware_ready = (err == ESP_OK);

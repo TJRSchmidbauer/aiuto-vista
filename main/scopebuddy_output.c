@@ -20,6 +20,10 @@ esp_err_t scopebuddy_output_start(const scope_signal_spec_t *signal)
 
     switch (signal->kind) {
     case SCOPE_SIGNAL_PWM:
+#ifdef CONFIG_CYD_MCP4725_SUPPORT
+        ESP_RETURN_ON_ERROR(gpio_wave_set_sine_style(signal->data.pwm.sine),
+                            "OUTPUT", "Setting sine style failed");
+#endif
         ESP_RETURN_ON_ERROR(gpio_wave_set_frequency(signal->data.pwm.frequency_hz),
                             "OUTPUT", "Setting frequency failed");
         ESP_RETURN_ON_ERROR(gpio_wave_set_duty(signal->data.pwm.duty_percent),

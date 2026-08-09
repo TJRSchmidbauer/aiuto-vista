@@ -76,6 +76,7 @@ typedef struct {
 typedef struct {
     uint32_t frequency_hz;
     uint8_t duty_percent;
+    bool sine;
 } scope_pwm_spec_t;
 
 typedef struct {

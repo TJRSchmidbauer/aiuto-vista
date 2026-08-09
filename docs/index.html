@@ -8,7 +8,7 @@
     <title>Aiuto-Vista installieren</title>
     <meta
       name="description"
-      content="Aiuto-Vista 0.6.0 direkt im Browser auf einem ESP32-2432S028 (Cheap Yellow Display) installieren. Fork of ScopeBuddy."
+      content="Aiuto-Vista 0.7.0 direkt im Browser auf einem ESP32-2432S028 (Cheap Yellow Display) installieren. Fork of ScopeBuddy."
     >
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="styles.css">
@@ -52,12 +52,12 @@
           <div>
             <div class="version-badge">
               <span class="status-dot" aria-hidden="true"></span>
-              Firmware 0.6.0
+              Firmware 0.7.0
             </div>
             <p class="section-label">Browser-Installation</p>
             <h2 id="install-heading">Aiuto-Vista installieren</h2>
             <p class="intro-copy">
-              Diese Webseite überträgt Aiuto-Vista 0.6.0 direkt über USB auf das
+              Diese Webseite überträgt Aiuto-Vista 0.7.0 direkt über USB auf das
               Display. Dafür sind weder ESP-IDF noch Python oder Git notwendig.
             </p>
           </div>
@@ -163,10 +163,20 @@
           <div class="version-selection">
             <label for="firmware-version">Firmware-Version</label>
             <select id="firmware-version" aria-describedby="version-note">
-              <option value="0.6.0">0.6.0 (aktuell)</option>
+              <option value="0.7.0">0.7.0 (aktuell)</option>
             </select>
             <p id="version-note" aria-live="polite">
-              Version 0.6.0 ist die aktuelle, empfohlene Version.
+              Version 0.7.0 ist die aktuelle, empfohlene Version.
+            </p>
+          </div>
+          <div class="version-selection">
+            <label for="firmware-variant">Firmware-Variante</label>
+            <select id="firmware-variant" aria-describedby="variant-note">
+              <option value="digital">Digital (Standard)</option>
+              <option value="mcp4725">Analog (MCP4725-DAC)</option>
+            </select>
+            <p id="variant-note" aria-live="polite">
+              Signalausgabe über die GPIO-Pins 26 und 27. Keine Zusatzhardware nötig.
             </p>
           </div>
           <p>Display angeschlossen und Download-Modus aktiviert?</p>
@@ -209,13 +219,21 @@
             Das 2432S028 nutzt die CH340C-USB-Brücke. Diese erscheint im
             Browserdialog zwar als serieller Port, die Web-Serial-Übertragung
             kann aber bei manchen CH340-Varianten fehlschlagen. Lade dann die
-            Firmware-Datei
-            <a href="firmware/aiuto-vista-v0.6.0.bin">aiuto-vista-v0.6.0.bin</a>
-            herunter (bei GitHub Pages bereitgestellt) und flashe sie mit
-            esptool:
+            passende Firmware-Datei herunter (bei GitHub Pages bereitgestellt)
+            und flashe sie mit esptool:
+          </p>
+          <p>
+            Für die Standard-Ausgabe über GPIO26/GPIO27 ohne Zusatzhardware:
+            <a href="firmware/aiuto-vista-v0.7.0-digital.bin">aiuto-vista-v0.7.0-digital.bin</a>
           </p>
           <pre class="esptool-command">python -m pip install esptool
-esptool.py --port COM3 --baud 460800 write_flash 0x0 aiuto-vista-v0.6.0.bin</pre>
+esptool.py --port COM3 --baud 460800 write_flash 0x0 aiuto-vista-v0.7.0-digital.bin</pre>
+          <p>
+            Für die analoge Ausgabe über zwei MCP4725-DACs (SDA GPIO22, SCL
+            GPIO23):
+            <a href="firmware/aiuto-vista-v0.7.0-mcp4725.bin">aiuto-vista-v0.7.0-mcp4725.bin</a>
+          </p>
+          <pre class="esptool-command">esptool.py --port COM3 --baud 460800 write_flash 0x0 aiuto-vista-v0.7.0-mcp4725.bin</pre>
           <p>
             Bei Linux lautet der Port meist <code>/dev/ttyUSB0</code>, bei macOS
             <code>/dev/tty.usbserial-…</code>. Alternativ eignet sich auch die

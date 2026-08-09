@@ -13,6 +13,28 @@ Cheap Yellow Display (ESP32-2432S028). Aiuto-Vista is a fork of ScopeBuddy
 GPIO26 and GPIO27 are driven as push-pull outputs (0 to 3.3 V) and are intended
 for high-impedance oscilloscope or logic-analyzer probes.
 
+## MCP4725-DAC variant
+
+The DAC build replaces the digital outputs with two MCP4725 DACs on the I2C
+bus. The expected result of every diagnostic and lesson check below is the
+equivalent analog signal on `VOUT` instead of the digital level on
+GPIO26/GPIO27.
+
+Wiring for the DAC build (`aiuto-vista-v*-mcp4725.bin`):
+
+- DAC-A (MCP4725, A0 to GND, address `0x60`) for CH1
+- DAC-B (MCP4725, A0 to VDD, address `0x61`) for CH2
+- `SDA` to GPIO22, `SCL` to GPIO23 (CN1 header)
+- 3.3 V and GND; 100 nF decoupling capacitor at each VDD pin
+
+Expected result: VOUT-A and VOUT-B sweep 0 V … 3.3 V (4096 steps). The
+single-channel diagnostic outputs 1 kHz at 50% on DAC-A. The two-channel
+diagnostic outputs 1 kHz at 50% on both DACs, DAC-B following DAC-A by
+100 µs. The tachometer lesson outputs a sine wave instead of pulses.
+
+The variant is configured with `CYD_MCP4725_SUPPORT` (Kconfig menu of the
+`bsp_extra` component); see `sdkconfig.mcp4725.defaults`.
+
 ## Single-channel diagnostic
 
 1. Flash the firmware and let it boot to the start screen.

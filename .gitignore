@@ -1,6 +1,7 @@
 .DS_Store
 **/.DS_Store
 **/build/
+**/build_mcp4725/
 **/__pycache__/
 *.py[cod]
 .vscode/

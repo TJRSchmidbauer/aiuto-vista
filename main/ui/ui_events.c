@@ -19,7 +19,7 @@
 #include <stdio.h>
 #include <math.h>
 
-#define AIUTO_VISTA_FIRMWARE_VERSION "0.6.0"
+#define AIUTO_VISTA_FIRMWARE_VERSION "0.7.0"
 #define UI_TAG "AIUTO_VISTA_UI"
 #define SETTINGS_NAMESPACE "aiuto_vista"
 #define SETTINGS_KEY "ui_flags"
@@ -437,7 +437,12 @@ static void start_scope_reset_signal(void)
     if (challenge_frequency == 0 && challenge.realized[0].period_us > 0) {
         challenge_frequency = 1000000U / challenge.realized[0].period_us;
     }
-    uint32_t reset_frequency = (challenge_frequency < 448U) ? 20000U : 10U;
+    uint32_t reset_frequency = (challenge_frequency < 448U) ? (
+#ifdef CONFIG_CYD_MCP4725_SUPPORT
+        2000U) : 10U;
+#else
+        20000U) : 10U;
+#endif
     esp_err_t err = gpio_wave_set_frequency(reset_frequency);
     if (err == ESP_OK) err = gpio_wave_set_duty(50);
     if (err == ESP_OK) err = gpio_wave_start();
@@ -1156,7 +1161,13 @@ static void single_test_toggle_event(lv_event_t *event)
     log_operation_error(starting ? "Starting one-channel test" :
                                    "Stopping one-channel test", err);
     update_hardware_test_control(single_test_status_label, single_test_action_label,
-                                 single_test_running, "AKTIV - GPIO26 MESSEN", err);
+                                 single_test_running,
+#ifdef CONFIG_CYD_MCP4725_SUPPORT
+                                 "AKTIV - DAC-A MESSEN",
+#else
+                                 "AKTIV - GPIO26 MESSEN",
+#endif
+                                 err);
 }
 
 static void sync_test_toggle_event(lv_event_t *event)
@@ -1538,11 +1549,21 @@ static void build_start_screen(void)
     }
     make_label(ui_Screen1, "CH1", 10, 222,
                &lv_font_montserrat_10, 0x00A0FF);
-    make_label(ui_Screen1, "GPIO26", 31, 222,
+    make_label(ui_Screen1,
+#ifdef CONFIG_CYD_MCP4725_SUPPORT
+               "DAC-A", 31, 222,
+#else
+               "GPIO26", 31, 222,
+#endif
                &lv_font_montserrat_10, 0xFFFFFF);
     make_label(ui_Screen1, "CH2", 98, 222,
                &lv_font_montserrat_10, 0x00A0FF);
-    make_label(ui_Screen1, "GPIO27", 119, 222,
+    make_label(ui_Screen1,
+#ifdef CONFIG_CYD_MCP4725_SUPPORT
+               "DAC-B", 119, 222,
+#else
+               "GPIO27", 119, 222,
+#endif
                &lv_font_montserrat_10, 0xFFFFFF);
     make_label(ui_Screen1, "GND", 170, 222,
                &lv_font_montserrat_10, 0x00A0FF);
@@ -1722,9 +1743,17 @@ static void build_diagnostics_screen(void)
     lv_obj_set_style_text_line_space(software_keys, 3, 0);
     char software_text[128];
     snprintf(software_text, sizeof(software_text),
+#ifdef CONFIG_CYD_MCP4725_SUPPORT
+             "%s\n%s\n%s\n%s\nMCP4725 (0x%02X)\nMCP4725 (0x%02X)",
+#else
              "%s\n%s\n%s\n%s\nGPIO26\nGPIO27",
+#endif
              AIUTO_VISTA_FIRMWARE_VERSION, app->idf_ver,
-             CONFIG_IDF_TARGET, hardware_ready ? "bereit" : "nicht bereit");
+             CONFIG_IDF_TARGET, hardware_ready ? "bereit" : "nicht bereit"
+#ifdef CONFIG_CYD_MCP4725_SUPPORT
+             , CONFIG_CYD_DAC_DAC_A_ADDRESS, CONFIG_CYD_DAC_DAC_B_ADDRESS
+#endif
+             );
     lv_obj_t *software_values = make_label(software_card, software_text, 58, 25,
                                             &lv_font_montserrat_10, 0xFFFFFF);
     lv_obj_set_style_text_line_space(software_values, 3, 0);
@@ -1807,17 +1836,31 @@ static void build_hardware_tests_screen(void)
     lv_obj_set_style_text_font(lv_obj_get_child(back_button, 0), &lv_font_montserrat_16, 0);
     lv_obj_t *single_action_button = make_hardware_test_card(
         10, "1-KANAL-TEST",
+#ifdef CONFIG_CYD_MCP4725_SUPPORT
+        "CH1 / DAC-A\n"
+        "1 kHz, 50 % Tastgrad\n"
+        "0 bis 3,3 V gegen GND.\n"
+        "Nach Stopp: DAC-A LOW.",
+#else
         "CH1 / GPIO26\n"
         "1 kHz, 50 % Tastgrad\n"
         "0 bis 3,3 V gegen GND.\n"
         "Nach Stopp: GPIO26 LOW.",
+#endif
         &single_test_status_label, &single_test_action_label, single_test_toggle_event);
     make_hardware_test_card(
         165, "2-KANAL-TEST",
+#ifdef CONFIG_CYD_MCP4725_SUPPORT
+        "CH1 / DAC-A: 1 kHz\n"
+        "CH2 / DAC-B: 1 kHz\n"
+        "Versatz: 100 µs\n"
+        "Beide gegen denselben GND.",
+#else
         "CH1 / GPIO26: 1 kHz\n"
         "CH2 / GPIO27: 1 kHz\n"
         "Versatz: 100 µs\n"
         "Beide gegen denselben GND.",
+#endif
         &sync_test_status_label, &sync_test_action_label, sync_test_toggle_event);
     (void)single_action_button;
     log_ui_memory("hardware tests ready");
@@ -2032,12 +2075,20 @@ void WaveHardwareReady(bool ready)
 void LedOn(lv_event_t *e)
 {
     (void)e;
+#ifdef CONFIG_CYD_MCP4725_SUPPORT
+    log_operation_error("Starting DAC-A output", gpio_wave_start());
+#else
     log_operation_error("Starting GPIO26 output", gpio_wave_start());
+#endif
 }
 void LedOff(lv_event_t *e)
 {
     (void)e;
+#ifdef CONFIG_CYD_MCP4725_SUPPORT
+    log_operation_error("Stopping DAC-A output", gpio_wave_stop());
+#else
     log_operation_error("Stopping GPIO26 output", gpio_wave_stop());
+#endif
 }
 void WaveFrequencyChanged(lv_event_t *e) { (void)e; }
 void WaveDutyChanged(lv_event_t *e) { (void)e; }

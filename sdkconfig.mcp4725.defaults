@@ -1,0 +1,4 @@
+# Aiuto-Vista DAC variant (2x MCP4725 on I2C) build configuration.
+# Build with: SDKCONFIG_DEFAULTS="sdkconfig.defaults sdkconfig.mcp4725.defaults"
+# See README section "Variante mit zwei MCP4725 DACs".
+CONFIG_CYD_MCP4725_SUPPORT=y

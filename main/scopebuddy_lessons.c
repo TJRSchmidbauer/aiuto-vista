@@ -7,7 +7,19 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifdef CONFIG_CYD_MCP4725_SUPPORT
+#define CH1_CONNECTION "CH1 an DAC-A, Masse an GND."
+#define CH2_CONNECTION "CH1 an DAC-A, CH2 an DAC-B, gemeinsame Masse an GND."
+#define CH2_ECHO_CONNECTION "CH1 an DAC-A (Trigger), CH2 an DAC-B (Echo), Masse an GND."
+#define CH2_PWM_CONNECTION "CH1 an DAC-A (Freigabe), CH2 an DAC-B (PWM), Masse an GND."
+#define CH2_SPUR_CONNECTION "CH1 an DAC-A (Spur A), CH2 an DAC-B (Spur B), Masse an GND."
+#else
 #define CH1_CONNECTION "CH1 an GPIO26, Masse an GND."
+#define CH2_CONNECTION "CH1 an GPIO26, CH2 an GPIO27, gemeinsame Masse an GND."
+#define CH2_ECHO_CONNECTION "CH1 an GPIO26 (Trigger), CH2 an GPIO27 (Echo), Masse an GND."
+#define CH2_PWM_CONNECTION "CH1 an GPIO26 (Freigabe), CH2 an GPIO27 (PWM), Masse an GND."
+#define CH2_SPUR_CONNECTION "CH1 an GPIO26 (Spur A), CH2 an GPIO27 (Spur B), Masse an GND."
+#endif
 
 static const scope_lesson_definition_t lessons[SCOPEBUDDY_LESSON_COUNT] = {
     { .id = SCOPE_LESSON_PERIODIC, .title = "PERIODISCHES SIGNAL", .category = "GRUNDLAGEN",
@@ -58,37 +70,37 @@ static const scope_lesson_definition_t lessons[SCOPEBUDDY_LESSON_COUNT] = {
     { .id = SCOPE_LESSON_TRIGGER_RESPONSE, .title = "TRIGGER-ANTWORT", .category = "EREIGNISSE",
       .summary = "Triggerbreite, Antwortbreite und Reaktionszeit",
       .learning_objective = "Pulsbreiten und die Verzögerung zwischen zwei Kanälen bestimmen.",
-      .connection_hint = "CH1 an GPIO26, CH2 an GPIO27, gemeinsame Masse an GND.",
+      .connection_hint = CH2_CONNECTION,
       .trigger_hint = "Auf die steigende Flanke von CH1 triggern.",
       .required_channels = 2 },
     { .id = SCOPE_LESSON_PHASE_SHIFT, .title = "PHASENVERSCHIEBUNG", .category = "ZEITBEZIEHUNGEN",
       .summary = "Periodendauer, Zeitversatz und Phasenwinkel",
       .learning_objective = "Aus Periodendauer und Zeitversatz die Phasenlage berechnen.",
-      .connection_hint = "CH1 an GPIO26, CH2 an GPIO27, gemeinsame Masse an GND.",
+      .connection_hint = CH2_CONNECTION,
       .trigger_hint = "Auf CH1 triggern und die steigenden Flanken beider Kanäle vergleichen.",
       .required_channels = 2 },
     { .id = SCOPE_LESSON_FREQUENCY_DIVIDER, .title = "FREQUENZTEILER", .category = "TAKTSIGNALE",
       .summary = "Ein- und Ausgangsfrequenz sowie Teilverhältnis",
       .learning_objective = "Zwei Frequenzen messen und daraus das ganzzahlige Teilverhältnis bestimmen.",
-      .connection_hint = "CH1 an GPIO26, CH2 an GPIO27, gemeinsame Masse an GND.",
+      .connection_hint = CH2_CONNECTION,
       .trigger_hint = "Auf CH2 triggern und mehrere CH1-Perioden anzeigen.",
       .required_channels = 2 },
     { .id = SCOPE_LESSON_ULTRASONIC, .title = "ULTRASCHALL-ECHO", .category = "SENSORSIGNALE",
       .summary = "Echoverzögerung, Echobreite und Entfernung",
       .learning_objective = "Aus der Breite eines simulierten Echosignals eine Entfernung bestimmen.",
-      .connection_hint = "CH1 an GPIO26 (Trigger), CH2 an GPIO27 (Echo), Masse an GND.",
+      .connection_hint = CH2_ECHO_CONNECTION,
       .trigger_hint = "Auf die steigende Triggerflanke von CH1 triggern.",
       .required_channels = 2 },
     { .id = SCOPE_LESSON_GATED_PWM, .title = "FREIGEGEBENE PWM", .category = "STEUERSIGNALE",
       .summary = "Startverzögerung, Pulszahl und Freigabedauer",
       .learning_objective = "Startverzögerung, Pulszahl und Dauer eines freigegebenen PWM-Pakets messen.",
-      .connection_hint = "CH1 an GPIO26 (Freigabe), CH2 an GPIO27 (PWM), Masse an GND.",
+      .connection_hint = CH2_PWM_CONNECTION,
       .trigger_hint = "Auf die steigende Freigabeflanke von CH1 triggern.",
       .required_channels = 2 },
     { .id = SCOPE_LESSON_QUADRATURE, .title = "QUADRATURGEBER", .category = "ENCODERSIGNALE",
       .summary = "Periodendauer, Flankenversatz und führende Spur",
       .learning_objective = "Aus der führenden Spur die simulierte Drehrichtung bestimmen.",
-      .connection_hint = "CH1 an GPIO26 (Spur A), CH2 an GPIO27 (Spur B), Masse an GND.",
+      .connection_hint = CH2_SPUR_CONNECTION,
       .trigger_hint = "Auf eine steigende Flanke von Spur A triggern.",
       .required_channels = 2 },
 };
@@ -236,16 +248,27 @@ static esp_err_t generate_pwm(scope_lesson_instance_t *instance)
     static const uint32_t easy_frequencies[] = { 100, 200, 500, 1000 };
     static const uint32_t easy_duties[] = { 25, 50, 75 };
     uint32_t frequency = instance->difficulty == 1 ? choose(easy_frequencies, 4) :
+#ifdef CONFIG_CYD_MCP4725_SUPPORT
+                         instance->difficulty == 2 ? random_range(500, 2000) / 50U * 50U :
+                                                     random_range(500, 2000);
+#else
                          instance->difficulty == 2 ? random_range(500, 5000) / 50U * 50U :
                                                      random_range(500, 10000);
+#endif
     uint32_t duty = instance->difficulty == 1 ? choose(easy_duties, 3) :
                     instance->difficulty == 2 ? random_range(2, 18) * 5U :
                                                 random_range(10, 90);
     instance->signal.kind = SCOPE_SIGNAL_PWM;
-    instance->signal.data.pwm = (scope_pwm_spec_t){ frequency, (uint8_t)duty };
+    instance->signal.data.pwm = (scope_pwm_spec_t){ .frequency_hz = frequency,
+                                                     .duty_percent = (uint8_t)duty };
     set_realized_pwm(&instance->realized[0], frequency, (uint8_t)duty);
+#ifdef CONFIG_CYD_MCP4725_SUPPORT
+    snprintf(instance->context, sizeof(instance->context),
+             "Miss das periodische Digitalsignal an DAC-A gegen GND.");
+#else
     snprintf(instance->context, sizeof(instance->context),
              "Miss das periodische Digitalsignal an GPIO26 gegen GND.");
+#endif
     format_pwm_measurements(instance);
     return ESP_OK;
 }
@@ -347,9 +370,19 @@ static esp_err_t generate_tachometer(scope_lesson_instance_t *instance)
     static const uint32_t ppr_values[] = { 1, 2, 4 };
     uint32_t ppr = ppr_values[instance->difficulty - 1U];
     uint32_t frequency = instance->difficulty == 1 ? random_range(5, 20) * 10U :
+#ifdef CONFIG_CYD_MCP4725_SUPPORT
+                         random_range(50, instance->difficulty == 2 ? 400 : 500);
+#else
                          random_range(50, instance->difficulty == 2 ? 400 : 800);
+#endif
     instance->signal.kind = SCOPE_SIGNAL_PWM;
-    instance->signal.data.pwm = (scope_pwm_spec_t){ frequency, 50 };
+    instance->signal.data.pwm = (scope_pwm_spec_t){ .frequency_hz = frequency,
+                                                    .duty_percent = 50,
+#ifdef CONFIG_CYD_MCP4725_SUPPORT
+                                                    .sine = true };
+#else
+                                                    .sine = false };
+#endif
     set_realized_pwm(&instance->realized[0], frequency, 50);
     instance->parameters.tachometer.pulses_per_revolution = ppr;
     snprintf(instance->context, sizeof(instance->context),
@@ -389,7 +422,11 @@ static esp_err_t generate_button_bounce(scope_lesson_instance_t *instance)
 
 static esp_err_t generate_uart(scope_lesson_instance_t *instance)
 {
+#ifdef CONFIG_CYD_MCP4725_SUPPORT
+    static const uint32_t baud_by_level[] = { 1200, 2400, 9600 };
+#else
     static const uint32_t baud_by_level[] = { 2400, 9600, 19200 };
+#endif
     static const uint8_t bytes[] = { 0x35, 0x55, 0x6D, 0xA5, 0xC3 };
     uint32_t baud = baud_by_level[instance->difficulty - 1U];
     uint32_t bit_us = (1000000U + baud / 2U) / baud;
@@ -419,15 +456,24 @@ static esp_err_t generate_uart(scope_lesson_instance_t *instance)
 
 static esp_err_t generate_alternating(scope_lesson_instance_t *instance)
 {
-    uint32_t frequency_a = random_range(2, instance->difficulty == 1 ? 10 : 60) * 100U;
+    uint32_t frequency_a = random_range(2, instance->difficulty == 1 ? 10 :
+#ifdef CONFIG_CYD_MCP4725_SUPPORT
+                                       20) * 100U;
+    uint32_t frequency_b;
+    do frequency_b = random_range(2, instance->difficulty == 1 ? 10 : 20) * 100U;
+#else
+                                       60) * 100U;
     uint32_t frequency_b;
     do frequency_b = random_range(2, instance->difficulty == 1 ? 10 : 80) * 100U;
+#endif
     while (frequency_b > frequency_a * 4U / 5U && frequency_b < frequency_a * 6U / 5U);
     uint32_t duration = instance->difficulty == 1 ? random_range(4, 10) * 100U : random_range(150, 900);
     uint8_t duty_b = (uint8_t)(instance->difficulty == 3 ? random_range(25, 75) : 50);
     instance->signal.kind = SCOPE_SIGNAL_ALTERNATING;
-    instance->signal.data.alternating.state_a = (scope_pwm_spec_t){ frequency_a, 50 };
-    instance->signal.data.alternating.state_b = (scope_pwm_spec_t){ frequency_b, duty_b };
+    instance->signal.data.alternating.state_a = (scope_pwm_spec_t){ .frequency_hz = frequency_a,
+                                                                     .duty_percent = 50 };
+    instance->signal.data.alternating.state_b = (scope_pwm_spec_t){ .frequency_hz = frequency_b,
+                                                                    .duty_percent = duty_b };
     instance->signal.data.alternating.state_duration_ms = (uint16_t)duration;
     set_realized_pwm(&instance->realized[0], frequency_a, 50);
     set_realized_pwm(&instance->realized[1], frequency_b, duty_b);
@@ -448,8 +494,13 @@ static esp_err_t generate_trigger_response(scope_lesson_instance_t *instance)
                               instance->difficulty == 2 ? random_range(5, 20) * 100U :
                                                           random_range(200, 2500);
     uint32_t delay = instance->difficulty == 1 ? choose(easy_delays, 3) :
+#ifdef CONFIG_CYD_MCP4725_SUPPORT
+                     instance->difficulty == 2 ? random_range(12, 100) * 100U :
+                                                 random_range(17, 100) * 100U;
+#else
                      instance->difficulty == 2 ? random_range(5, 50) * 100U :
                                                  random_range(300, 10000);
+#endif
     uint32_t common_duration = delay + response_width + 10000U;
 
     begin_pair(instance);
@@ -483,11 +534,23 @@ static esp_err_t generate_phase_shift(scope_lesson_instance_t *instance)
 {
     static const uint32_t periods[] = { 1000, 2000, 4000 };
     static const uint32_t easy_phases[] = { 90, 180, 270 };
+#ifdef CONFIG_CYD_MCP4725_SUPPORT
+    static const uint32_t medium_phases[] = { 90, 135, 180, 225, 270 };
+    uint32_t period = instance->difficulty == 3 ? ((esp_random() & 1U) ? 2000U : 4000U) :
+                      choose(periods, 3);
+#else
     static const uint32_t medium_phases[] = { 45, 90, 135, 180, 225, 270 };
     uint32_t period = choose(periods, 3);
+#endif
     uint32_t requested_phase = instance->difficulty == 1 ? choose(easy_phases, 3) :
-                               instance->difficulty == 2 ? choose(medium_phases, 6) :
+                               instance->difficulty == 2 ? choose(medium_phases,
+#ifdef CONFIG_CYD_MCP4725_SUPPORT
+                                                                   5) :
+                                                           random_range(3, 18) * 15U;
+#else
+                                                                   6) :
                                                            random_range(2, 18) * 15U;
+#endif
     uint32_t delay = (period * requested_phase + 180U) / 360U;
     uint32_t high_time = period / 5U;
     double actual_phase = 360.0 * delay / period;

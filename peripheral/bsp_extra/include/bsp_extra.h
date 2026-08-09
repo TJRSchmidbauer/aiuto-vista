@@ -19,6 +19,7 @@
 #define EXTRA_TAG "EXTRA"                           // Define log tag name "EXTRA" used for identifying log messages
 #define EXTRA_INFO(fmt, ...) ESP_LOGI(EXTRA_TAG, fmt, ##__VA_ARGS__)   // Macro for info-level logging with tag "EXTRA"
 #define EXTRA_DEBUG(fmt, ...) ESP_LOGD(EXTRA_TAG, fmt, ##__VA_ARGS__)  // Macro for debug-level logging with tag "EXTRA"
+#define EXTRA_WARN(fmt, ...) ESP_LOGW(EXTRA_TAG, fmt, ##__VA_ARGS__)   // Macro for warning-level logging with tag "EXTRA"
 #define EXTRA_ERROR(fmt, ...) ESP_LOGE(EXTRA_TAG, fmt, ##__VA_ARGS__)  // Macro for error-level logging with tag "EXTRA"
 
 esp_err_t gpio_extra_init();                        // Function declaration for initializing GPIO
@@ -29,6 +30,11 @@ esp_err_t gpio_wave_stop(void);
 esp_err_t gpio_wave_set_frequency(uint32_t frequency_hz);
 esp_err_t gpio_wave_set_duty(uint8_t duty_percent);
 esp_err_t gpio_wave_get_effective(uint32_t *frequency_hz, uint8_t *duty_percent);
+
+#ifdef CONFIG_CYD_MCP4725_SUPPORT
+/* DAC variant only: render PWM/square waveforms as a sine (e.g. tachometer). */
+esp_err_t gpio_wave_set_sine_style(bool sine);
+#endif
 
 typedef struct {
     bool level;

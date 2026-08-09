@@ -11,8 +11,10 @@ für das Elecrow CrowPanel Advance 5″ (ESP32-P4) entwickelt wurde. Dieser Fork
 portiert ScopeBuddy auf das günstige CYD-Touchdisplay (ESP32) und ist nur
 gemeinsam mit dem Original zu verstehen.
 
-Firmware 0.6.0 bietet 15 Ein- und Zweikanal-Lektionen, Touch-Kalibrierung und
-die Bedienung über den CYD-Touchscreen.
+Firmware 0.7.0 bietet 15 Ein- und Zweikanal-Lektionen, Touch-Kalibrierung und
+die Bedienung über den CYD-Touchscreen. Sie gibt es in zwei Varianten: mit
+digitaler Signalausgabe über GPIO-Pins (Standard) oder mit analoger Ausgabe
+über zwei MCP4725-DAC-Bausteine am I2C-Header.
 
 ## Was du brauchst
 
@@ -32,19 +34,56 @@ GPIO26 und GPIO27 sind 3,3-V-Logikausgänge, die nur für hochohmige
 Oszilloskop- oder Logikanalysator-Eingänge gedacht sind. Schließe keine
 Lasten oder externen Spannungen an diese Pins an.
 
+## MCP4725-DAC-Variante
+
+Die DAC-Variante gibt die Messsignale statt über GPIO26/GPIO27 als echte
+analoge Spannungen über zwei MCP4725-Bausteine aus. Die dafür nötige
+Hardware:
+
+| Komponente | Anforderung |
+|---|---|
+| DAC-Baustein CH1 (DAC-A) | MCP4725 mit A0 auf **GND** (Adresse `0x60`) |
+| DAC-Baustein CH2 (DAC-B) | MCP4725 mit A0 auf **VDD** (Adresse `0x61`) |
+| Verbindung | SDA an **GPIO22**, SCL an **GPIO23** (CN1-Header) |
+
+Die Bausteine werden mit 3,3 V und GND versorgt; ein 100-nF-Kondensator an
+der Versorgung jedes Bausteins wird empfohlen. Der Ausgang VOUT liefert
+0 V bis 3,3 V (4096 Stufen) und speist direkt den Oszilloskop-Eingang
+(Spannungsteiler nicht nötig, aber zulässig).
+
+Die Ausgänge der zwei Varianten im Vergleich:
+
+| Signal | Digital (Standard) | Analog (MCP4725-DAC) |
+|---|---|---|
+| CH1-Ausgang | `GPIO26` | `0x60` (VOUT an GND, A0=GND) |
+| CH2-Ausgang | `GPIO27` | `0x61` (VOUT an VDD, A0=VDD) |
+| Signalform | Rechteck (3,3 V) | Stufen (DAC, 8-Bit-Hüllkurve) |
+| Tachosignal | Rechteckpulse | echte Sinusform, bis 500 Hz |
+| PWM/Oszillator | bis 20 kHz | bis 2 kHz |
+
 ## Installieren
 
 Der einfachste Weg ist die vorgefertigte Firmware. Danach muss der
 Serienport deines Geräts bekannt sein (z. B. `/dev/ttyUSB0` unter Linux):
 
+Digitale Variante:
+
 ```bash
 esptool.py --chip esp32 --port /dev/ttyUSB0 --baud 921600 \
-  write-flash -z 0x0 docs/firmware/aiuto-vista-v0.6.0.bin
+  write-flash -z 0x0 docs/firmware/aiuto-vista-v0.7.0-digital.bin
+```
+
+MCP4725-DAC-Variante:
+
+```bash
+esptool.py --chip esp32 --port /dev/ttyUSB0 --baud 921600 \
+  write-flash -z 0x0 docs/firmware/aiuto-vista-v0.7.0-mcp4725.bin
 ```
 
 Das gemergte Image enthält Bootloader, Partitions-Tabelle und Anwendung in
-einem Schritt. Die Firmware-Datei liegt in `docs/firmware/`. Der Web-Installer
-in `docs/` wird über GitHub Pages ausgeliefert.
+einem Schritt. Die Firmware-Dateien liegen in `docs/firmware/`. Der
+Web-Installer in `docs/` wird über GitHub Pages ausgeliefert und fragt nach
+Version und Variante, bevor sie per Browser auf das Display übertragen wird.
 
 ## Erster Hardware-Check
 
@@ -94,7 +133,7 @@ Zweikanal-Lektionen auf GPIO26 und GPIO27:
 
 ## Aus dem Quellcode bauen
 
-Aiuto-Vista 0.6.0 ist mit ESP-IDF 5.4.2 gebaut und auf dem CYD getestet.
+Aiuto-Vista 0.7.0 ist mit ESP-IDF 5.4.2 gebaut und auf dem CYD getestet.
 ESP-IDF installieren und aktivieren, dann:
 
 ```bash
@@ -102,6 +141,17 @@ idf.py set-target esp32
 idf.py build
 idf.py flash monitor
 ```
+
+Die DAC-Variante wird über eine zusätzliche Konfigurationsdatei aktiviert:
+
+```bash
+SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.mcp4725.defaults" \
+  idf.py -B build_mcp4725 build
+idf.py -p /dev/ttyUSB0 -B build_mcp4725 flash monitor
+```
+
+Das Kconfig-Menü der Komponente `bsp_extra` steuert die DAC-Variante
+(`CYD_MCP4725_SUPPORT`) sowie I2C-Pins, -Takt und die DAC-Adressen.
 
 Der Component Manager von ESP-IDF lädt die benötigten LVGL-, Display- und
 Touch-Komponenten automatisch herunter. `dependencies.lock` fixiert die

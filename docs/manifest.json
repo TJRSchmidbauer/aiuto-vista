@@ -1,6 +1,6 @@
 {
   "name": "Aiuto-Vista",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "new_install_prompt_erase": true,
   "new_install_improv_wait_time": 0,
   "builds": [
@@ -9,7 +9,7 @@
       "improv": false,
       "parts": [
         {
-          "path": "firmware/aiuto-vista-v0.6.0.bin",
+          "path": "firmware/aiuto-vista-v0.7.0-digital.bin",
           "offset": 0
         }
       ]

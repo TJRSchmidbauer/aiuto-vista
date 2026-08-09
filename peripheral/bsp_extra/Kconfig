@@ -1,0 +1,59 @@
+menu "BSP CYD Signal Output"
+
+    config CYD_MCP4725_SUPPORT
+        bool "Generate signals with two MCP4725 DACs (I2C)"
+        default n
+        help
+            Build variant for the analog output option: instead of GPIO26/27
+            (LEDC/RMT) the waveforms are produced by two MCP4725 12-bit DACs
+            on the I2C bus (SDA/SCL). The rest of the program (lessons,
+            measurements, UI) is identical. All waveform timing requirements
+            of the exercises are met by the DAC renderer (edge-accurate
+            timing); very short segments (below 100 us) are stretched so the
+            DAC can reproduce them.
+
+    if CYD_MCP4725_SUPPORT
+
+        config CYD_DAC_I2C_SDA
+            int "I2C SDA pin"
+            default 22
+            help
+                Standard CYD I2C header pin (GPIO22). Do not use GPIO21
+                (LCD backlight) or GPIO26/27 (waveform outputs).
+
+        config CYD_DAC_I2C_SCL
+            int "I2C SCL pin"
+            default 23
+
+        config CYD_DAC_I2C_FREQ_HZ
+            int "I2C clock speed in Hz"
+            default 1000000
+            help
+                1 MHz keeps the per-sample write time around 40 us which is
+                required for accurate edges (e.g. UART bit times). MCP4725
+                supports fast mode plus (3.4 MHz). Reduce to 400000 only if
+                the bus is unstable on long wires.
+
+        config CYD_DAC_DAC_A_ADDRESS
+            hex "MCP4725 channel 1 (CH1) I2C address"
+            default 0x60
+            help
+                Address with the A0 pin tied to GND (0x60) or VCC (0x61).
+                The A0 pin must differ between the two DACs.
+
+        config CYD_DAC_DAC_B_ADDRESS
+            hex "MCP4725 channel 2 (CH2) I2C address"
+            default 0x61
+
+        config CYD_DAC_RENDERER_TASK_PRIORITY
+            int "Renderer task priority"
+            default 5
+            range 1 24
+
+        config CYD_DAC_RENDERER_TASK_STACK
+            int "Renderer task stack size"
+            default 4096
+
+    endif
+
+endmenu
