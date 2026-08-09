@@ -1,140 +1,149 @@
 # Aiuto-Vista
 
-Aiuto-Vista verwandelt ein Cheap Yellow Display (CYD, ESP32-2432S028) in einen
-praktischen Oszilloskop-Trainer. Es erzeugt echte 3,3-V-Digitalsignale, stellt
-zufällige Messaufgaben und zeigt die erwarteten Werte auf Wunsch an.
+Aiuto-Vista turns a Cheap Yellow Display (CYD, ESP32-2432S028) into a practical
+oscilloscope trainer. It generates genuine 3.3-V signals, presents randomized
+measurement tasks, and optionally reveals the expected values.
 
-**Ursprung:** Aiuto-Vista ist ein **Fork von ScopeBuddy** von Johannes Börnsen
-(https://github.com/johannesboernsen/ScopeBuddy). Die Idee, die Lektionen, die
-Messaufgaben und große Teile des Codes stammen aus dem Originalprojekt, das
-für das Elecrow CrowPanel Advance 5″ (ESP32-P4) entwickelt wurde. Dieser Fork
-portiert ScopeBuddy auf das günstige CYD-Touchdisplay (ESP32) und ist nur
-gemeinsam mit dem Original zu verstehen.
+**Origin:** Aiuto-Vista is a **fork of ScopeBuddy** by Johannes Börnsen
+(https://github.com/johannesboernsen/ScopeBuddy). The idea, the lessons, the
+measurement tasks, and large parts of the code come from the original project,
+which was developed for the Elecrow CrowPanel Advance 5″ (ESP32-P4). This fork
+ports ScopeBuddy to the inexpensive CYD touch display (ESP32) and can only be
+understood together with the original.
 
-Firmware 0.7.0 bietet 15 Ein- und Zweikanal-Lektionen, Touch-Kalibrierung und
-die Bedienung über den CYD-Touchscreen. Sie gibt es in zwei Varianten: mit
-digitaler Signalausgabe über GPIO-Pins (Standard) oder mit analoger Ausgabe
-über zwei MCP4725-DAC-Bausteine am I2C-Header.
+Firmware 0.7.0 provides 15 single- and dual-channel lessons, touch calibration,
+and CYD touchscreen operation. It ships in two variants: the **digital**
+variant drives the signals through the GPIO pins, the **analog** variant
+outputs them through two MCP4725 DACs on the I2C header.
 
-## Was du brauchst
+## What you need
 
-| Komponente | Anforderung | Hinweise |
+| Component | Requirement | Notes |
 |---|---|---|
-| Display | Cheap Yellow Display (CYD) `ESP32-2432S028`, 320 × 240, Touchscreen | USB-C oder Micro-USB je nach Revision |
-| Oszilloskop | Ein Kanal für die Grundlektionen, zwei Kanäle für alle Lektionen | Hochohmige Eingänge und Tastköpfe für 3,3-V-Logik verwenden |
-| USB-Kabel | Datenkabel zum Flashen der Firmware | Reine Ladekabel funktionieren nicht |
+| Display | Cheap Yellow Display (CYD) `ESP32-2432S028`, 320 × 240, touchscreen | USB-C or Micro-USB, depending on revision |
+| Oscilloscope | One channel for the basic lessons, two channels for all lessons | Use high-impedance inputs and 3.3-V-logic-safe probes |
+| USB cable | Data cable for flashing the firmware | Charge-only cables do not work |
+| MCP4725-DAC variant only | Two MCP4725 breakout boards, breadboard, jumper wires | See [MCP4725-DAC variant](#mcp4725-dac-variant) |
 
-## Anschluss
+## Wiring (digital variant)
 
-- **CH1-Signal:** `GPIO26` (Audio-In-/Links-Pin der 3,5-mm-Buchse)
-- **CH2-Signal:** `GPIO27` (CN1-Header)
-- **Masse:** `GND`-Pin am CN1-Header (die Buchsenhülse führt ebenfalls GND)
+- **CH1 signal:** `GPIO26` (audio in / left pin of the 3.5 mm jack)
+- **CH2 signal:** `GPIO27` (CN1 header)
+- **Ground:** `GND` pin on the CN1 header (the jack sleeve also carries GND)
 
-GPIO26 und GPIO27 sind 3,3-V-Logikausgänge, die nur für hochohmige
-Oszilloskop- oder Logikanalysator-Eingänge gedacht sind. Schließe keine
-Lasten oder externen Spannungen an diese Pins an.
+GPIO26 and GPIO27 are 3.3-V logic outputs intended only for high-impedance
+oscilloscope or logic-analyzer inputs. Do not connect loads or external
+voltages to these pins.
 
-## MCP4725-DAC-Variante
+## MCP4725-DAC variant
 
-Die DAC-Variante gibt die Messsignale statt über GPIO26/GPIO27 als echte
-analoge Spannungen über zwei MCP4725-Bausteine aus. Die dafür nötige
-Hardware:
+The DAC variant outputs the measurement signals as true analog voltages
+through two MCP4725 DACs instead of GPIO26/GPIO27:
 
-| Komponente | Anforderung |
+| Component | Requirement |
 |---|---|
-| DAC-Baustein CH1 (DAC-A) | MCP4725 mit A0 auf **GND** (Adresse `0x60`) |
-| DAC-Baustein CH2 (DAC-B) | MCP4725 mit A0 auf **VDD** (Adresse `0x61`) |
-| Verbindung | SDA an **GPIO22**, SCL an **GPIO23** (CN1-Header) |
+| DAC for CH1 (DAC-A) | MCP4725 with A0 tied to **GND** (address `0x60`) |
+| DAC for CH2 (DAC-B) | MCP4725 with A0 tied to **VDD** (address `0x61`) |
+| Wiring | SDA to **GPIO22**, SCL to **GPIO23** (CN1 header) |
 
-Die Bausteine werden mit 3,3 V und GND versorgt; ein 100-nF-Kondensator an
-der Versorgung jedes Bausteins wird empfohlen. Der Ausgang VOUT liefert
-0 V bis 3,3 V (4096 Stufen) und speist direkt den Oszilloskop-Eingang
-(Spannungsteiler nicht nötig, aber zulässig).
+Power the boards with 3.3 V and GND; a 100 nF decoupling capacitor at the VDD
+pin of each board is recommended. The `VOUT` pin delivers 0 V to 3.3 V in 4096
+steps and can feed the oscilloscope input directly (a voltage divider is not
+required but allowed).
 
-Die Ausgänge der zwei Varianten im Vergleich:
+Outputs of the two variants compared:
 
-| Signal | Digital (Standard) | Analog (MCP4725-DAC) |
+| Signal | Digital (standard) | Analog (MCP4725-DAC) |
 |---|---|---|
-| CH1-Ausgang | `GPIO26` | `0x60` (VOUT an GND, A0=GND) |
-| CH2-Ausgang | `GPIO27` | `0x61` (VOUT an VDD, A0=VDD) |
-| Signalform | Rechteck (3,3 V) | Stufen (DAC, 8-Bit-Hüllkurve) |
-| Tachosignal | Rechteckpulse | echte Sinusform, bis 500 Hz |
-| PWM/Oszillator | bis 20 kHz | bis 2 kHz |
+| CH1 output | `GPIO26` | `0x60` (A0 to GND) |
+| CH2 output | `GPIO27` | `0x61` (A0 to VDD) |
+| Wave shape | Square (3.3 V) | Staircase (DAC envelope) |
+| Tachometer signal | Square pulses | True sine wave, up to 500 Hz |
+| PWM / oscillator | Up to 20 kHz | Up to 2 kHz |
+| Logic level | 0 V / 3.3 V | 0 V … 3.3 V, 4096 steps |
 
-## Installieren
+The DAC variant reports the same diagnostic signals as the digital variant,
+with the tachometer lesson emitting a sine wave instead of pulses.
 
-Der einfachste Weg ist die vorgefertigte Firmware. Danach muss der
-Serienport deines Geräts bekannt sein (z. B. `/dev/ttyUSB0` unter Linux):
+## Installing
 
-Digitale Variante:
+The easiest way is the prebuilt firmware. You need to know your device's
+serial port (e.g. `/dev/ttyUSB0` on Linux). The browser installer at
+https://TJRSchmidbauer.github.io/aiuto-vista/ asks for the firmware version
+and the variant, then transfers the matching image over USB. No ESP-IDF,
+Python, or Git is required.
+
+Alternatively, flash the merged image with esptool. The merged image contains
+bootloader, partition table, and application in a single step. The firmware
+files are generated into `docs/firmware/` by the CI workflow:
+
+Digital variant:
 
 ```bash
 esptool.py --chip esp32 --port /dev/ttyUSB0 --baud 921600 \
   write-flash -z 0x0 docs/firmware/aiuto-vista-v0.7.0-digital.bin
 ```
 
-MCP4725-DAC-Variante:
+MCP4725-DAC variant:
 
 ```bash
 esptool.py --chip esp32 --port /dev/ttyUSB0 --baud 921600 \
   write-flash -z 0x0 docs/firmware/aiuto-vista-v0.7.0-mcp4725.bin
 ```
 
-Das gemergte Image enthält Bootloader, Partitions-Tabelle und Anwendung in
-einem Schritt. Die Firmware-Dateien liegen in `docs/firmware/`. Der
-Web-Installer in `docs/` wird über GitHub Pages ausgeliefert und fragt nach
-Version und Variante, bevor sie per Browser auf das Display übertragen wird.
+## First hardware check
 
-## Erster Hardware-Check
+Two tests are available under **Einstellungen → Diagnose** (Settings →
+Diagnostics):
 
-Über **Einstellungen → Diagnose** stehen zwei Tests zur Verfügung:
+1. **Single-channel test:** `GPIO26` (or DAC-A) outputs 1 kHz at 50% duty
+   cycle.
+2. **Two-channel test:** `GPIO26`/`GPIO27` (or DAC-A/DAC-B) output 1 kHz at
+   50%, with channel 2 following channel 1 with a 100 µs delay.
 
-1. **Einkanal-Test:** `GPIO26` erzeugt 1 kHz bei 50 % Tastgrad.
-2. **Zweikanal-Test:** `GPIO26` und `GPIO27` erzeugen 1 kHz bei 50 %, wobei
-   `GPIO27` dem Kanal 1 mit 100 µs Verzögerung folgt.
+The expected measurement values are documented in the
+[hardware validation](docs/HARDWARE_VALIDATION.md).
 
-Details zu den erwarteten Messwerten stehen in der
-[Hardware-Validierung](docs/HARDWARE_VALIDATION.md).
+## Touch calibration
 
-## Touch-Kalibrierung
+Because the XPT2046 touch screens of the CYD boards vary from unit to unit,
+the touch can be individually tuned under **Einstellungen → Touch-Kalibrierung**
+(Settings → Touch calibration): tap five crosses one after another; the
+calibration is stored per device in the ESP32's NVS memory.
 
-Da die XPT2046-Touchscreens der CYD-Boards von Exemplar zu Exemplar abweichen,
-kann der Touch unter **Einstellungen → Touch-Kalibrierung** individuell
-abgeglichen werden: Fünf Kreuze nacheinander antippen, die Kalibrierung wird
-gerätespezifisch im NVS-Speicher des ESP32 abgelegt.
+## Lessons
 
-## Lektionen
+A lesson starts an open series of randomized tasks. Aiuto-Vista does not
+repeat the ten most recently generated signal configurations of a series. The
+confirmation prompt before returning to the start screen can be disabled in
+the settings.
 
-Eine Lektion startet eine offene Serie zufälliger Aufgaben. Aiuto-Vista
-wiederholt die zehn zuletzt erzeugten Signalkonfigurationen einer Serie nicht.
-Die Rückfrage vor dem Zurückkehren zur Startseite lässt sich in den
-Einstellungen abschalten.
+Single-channel lessons on GPIO26 (or DAC-A) — German labels as shown in the
+UI:
 
-Einkanal-Lektionen auf GPIO26:
+- Periodisches Signal (periodic signal)
+- Pulsbreiten (pulse widths)
+- Burst (burst)
+- Pulslücke (pulse gap)
+- Servosignal (servo signal)
+- Tachosignal (tachometer signal)
+- Tasterprellen (contact bounce)
+- UART 8N1 (UART 8N1)
+- Zustandswechsel (state change)
 
-- Periodisches Signal
-- Pulsbreiten
-- Burst
-- Pulslücke
-- Servosignal
-- Tachosignal
-- Tasterprellen
-- UART 8N1
-- Zustandswechsel
+Two-channel lessons on GPIO26 and GPIO27 (or DAC-A and DAC-B):
 
-Zweikanal-Lektionen auf GPIO26 und GPIO27:
+- Trigger-Antwort (trigger response)
+- Phasenverschiebung (phase shift)
+- Frequenzteiler (frequency divider)
+- Ultraschall-Echo (ultrasonic echo)
+- Freigegebene PWM (gated PWM)
+- Quadraturgeber (quadrature encoder)
 
-- Trigger-Antwort
-- Phasenverschiebung
-- Frequenzteiler
-- Ultraschall-Echo
-- Freigegebene PWM
-- Quadraturgeber
+## Building from source
 
-## Aus dem Quellcode bauen
-
-Aiuto-Vista 0.7.0 ist mit ESP-IDF 5.4.2 gebaut und auf dem CYD getestet.
-ESP-IDF installieren und aktivieren, dann:
+Aiuto-Vista 0.7.0 is built with ESP-IDF 5.4.2 and tested on the CYD. Install
+and activate ESP-IDF, then:
 
 ```bash
 idf.py set-target esp32
@@ -142,7 +151,7 @@ idf.py build
 idf.py flash monitor
 ```
 
-Die DAC-Variante wird über eine zusätzliche Konfigurationsdatei aktiviert:
+The DAC variant is enabled through an additional configuration file:
 
 ```bash
 SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.mcp4725.defaults" \
@@ -150,47 +159,48 @@ SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.mcp4725.defaults" \
 idf.py -p /dev/ttyUSB0 -B build_mcp4725 flash monitor
 ```
 
-Das Kconfig-Menü der Komponente `bsp_extra` steuert die DAC-Variante
-(`CYD_MCP4725_SUPPORT`) sowie I2C-Pins, -Takt und die DAC-Adressen.
+The Kconfig menu of the `bsp_extra` component controls the DAC variant
+(`CYD_MCP4725_SUPPORT`) as well as the I2C pins, the I2C clock frequency, and
+the DAC addresses (`CYD_DAC_I2C_SDA`, `CYD_DAC_I2C_SCL`,
+`CYD_DAC_I2C_FREQ_HZ`, `CYD_DAC_DAC_A_ADDRESS`, `CYD_DAC_DAC_B_ADDRESS`).
 
-Der Component Manager von ESP-IDF lädt die benötigten LVGL-, Display- und
-Touch-Komponenten automatisch herunter. `dependencies.lock` fixiert die
-Versionen für Release-Builds.
+The ESP-IDF component manager downloads the required LVGL, display, and touch
+components automatically. `dependencies.lock` pins the versions for release
+builds.
 
-## Lizenz und rechtliche Hinweise
+## License and legal notices
 
-Dieser Fork basiert auf den **Original-Beiträgen von ScopeBuddy**, die unter
-der [ScopeBuddy Community License 1.0](LICENSE.md) stehen. Demnach darfst du
-den Code bauen, studieren, verändern und veröffentlichen, auch für Bildung und
-Forschung. Veröffentlichte veränderte Versionen müssen den zugehörigen
-Quellcode bereitstellen, einen **Verweis auf das Originalprojekt** enthalten
-und einen **eigenen Namen** tragen — dieser Fork erfüllt das mit dem Namen
-Aiuto-Vista und den Verweisen auf
+This fork is based on the **original contributions of ScopeBuddy**, which are
+licensed under the [ScopeBuddy Community License 1.0](LICENSE.md). Under that
+license you may build, study, modify, and publish the code, including for
+education and research. Published modified versions must provide the
+corresponding source code, include a **reference to the original project**,
+and carry a **distinct name** — this fork satisfies that with the name
+Aiuto-Vista and the references to
 https://github.com/johannesboernsen/ScopeBuddy.
 
-ScopeBuddy-Geräte und -Kits dürfen zum Selbstkostenpreis weitergegeben werden.
-Ein gewinnorientierter Verkauf erfordert eine separate kommerzielle Lizenz vom
-Inhaber des Original-Repositorys. ScopeBuddy — und damit auch dieser Fork —
-ist *source-available*, aber nicht Open Source im Sinne der Open Source
+ScopeBuddy devices and kits may be distributed at cost price. A
+profit-oriented sale requires a separate commercial license from the owner of
+the original repository. ScopeBuddy — and therefore this fork as well — is
+*source-available* but not open source in the sense of the Open Source
 Initiative.
 
-Von Elecrow abgeleitetes Board-Support-Material und andere
-Drittanbieter-Komponenten werden durch ScopeBuddy nicht um-lizenziert. Deren
-Status und die genauen Lizenzgrenzen sind in
-[LICENSE.md](LICENSE.md) und [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
-dokumentiert.
+Board-support material derived from Elecrow and other third-party components
+are not relicensed by ScopeBuddy. Their status and the exact license
+boundaries are documented in [LICENSE.md](LICENSE.md) and
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-## Ursprung und Danksagung
+## Origin and acknowledgments
 
-Alle Lektionen, Messaufgaben, das UI-Konzept und wesentliche
-Software-Teile stammen aus **ScopeBuddy von Johannes Börnsen**
-(https://github.com/johannesboernsen/ScopeBuddy). Ohne dieses Projekt gäbe es
-Aiuto-Vista nicht. Bitte unterstütze das Originalprojekt; Beiträge richten
-sich an das Original und folgen dessen [CONTRIBUTING.md](CONTRIBUTING.md) mit
-dem dortigen [CLA](CLA.md).
+All lessons, measurement tasks, the UI concept, and essential software parts
+originate from **ScopeBuddy by Johannes Börnsen**
+(https://github.com/johannesboernsen/ScopeBuddy). Without this project there
+would be no Aiuto-Vista. Please support the original project; contributions
+are directed to the original and follow its
+[CONTRIBUTING.md](CONTRIBUTING.md) with the [CLA](CLA.md) described there.
 
-## Weitere Dokumentation
+## Further documentation
 
-- [Hardware-Validierung und Diagnose](docs/HARDWARE_VALIDATION.md)
-- [Wartung und Release-Prozess](docs/MAINTAINING.md)
-- [Drittanbieter-Hinweise](THIRD_PARTY_NOTICES.md)
+- [Hardware validation and diagnostics](docs/HARDWARE_VALIDATION.md)
+- [Maintenance and release process](docs/MAINTAINING.md)
+- [Third-party notices](THIRD_PARTY_NOTICES.md)
